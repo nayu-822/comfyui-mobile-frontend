@@ -17,6 +17,8 @@ function getPanelLabel(panel: PanelMode): string {
   switch (panel) {
     case 'outputs':
       return t('Outputs');
+    case 'generation':
+      return 'Simple Generation';
     case 'workflow':
       return t('Workflow');
     case 'queue':
@@ -24,9 +26,18 @@ function getPanelLabel(panel: PanelMode): string {
   }
 }
 
+// Keep the established navigation geometry for the existing three panels.
+// The simple-generation page is an additive entry point and points back to
+// Workflow without changing the old panel's left/right jump semantics.
 const panelOrder: PanelMode[] = ['outputs', 'workflow', 'queue'];
 
 export function getTopBarPanelNavigation(mode: PanelMode): TopBarPanelNavigationConfig {
+  if (mode === 'generation') {
+    return {
+      left: [],
+      right: [{ panel: 'workflow', label: getPanelLabel('workflow'), direction: 'right', jumps: 1 }],
+    };
+  }
   const currentIndex = panelOrder.indexOf(mode);
   const itemFor = (panel: PanelMode): TopBarPanelNavigationItem => {
     const targetIndex = panelOrder.indexOf(panel);

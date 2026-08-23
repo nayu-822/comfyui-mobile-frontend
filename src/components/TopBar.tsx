@@ -25,6 +25,8 @@ interface TopBarProps {
 
 function getScrollSelectors(mode: TopBarProps['mode']): string[] {
   switch (mode) {
+    case 'generation':
+      return [];
     case 'queue':
       return ['[data-queue-list="true"]', '[data-node-list="true"]'];
     case 'workflow':
@@ -139,6 +141,8 @@ export function TopBar({ mode = 'workflow' }: TopBarProps) {
 
   const title = useMemo(() => {
     switch (mode) {
+      case 'generation':
+        return 'Simple Generation';
       case 'queue':
         return 'Queue';
       case 'outputs':
@@ -154,6 +158,8 @@ export function TopBar({ mode = 'workflow' }: TopBarProps) {
 
   const rightControls = useMemo(() => {
     switch (mode) {
+      case 'generation':
+        return null;
       case 'queue':
         return <QueueTopBarControls />;
       case 'outputs':

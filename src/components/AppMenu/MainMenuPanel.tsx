@@ -40,6 +40,7 @@ interface MainMenuPanelProps {
   onOpenLegend: () => void;
   onRestartServer: () => void;
   onOpenGenerationSettings: () => void;
+  onOpenSimpleGeneration: () => void;
   onOpenCustomNodes: () => void;
 }
 
@@ -69,11 +70,20 @@ export function MainMenuPanel({
   onOpenLegend,
   onRestartServer,
   onOpenGenerationSettings,
+  onOpenSimpleGeneration,
   onOpenCustomNodes,
 }: MainMenuPanelProps) {
   return (
     <div className="pb-8">
       <MenuErrorNotice error={error} onDismiss={onDismissError} />
+
+      <button
+        type="button"
+        onClick={onOpenSimpleGeneration}
+        className="mx-3 mb-3 flex min-h-12 w-[calc(100%-1.5rem)] items-center rounded-xl border border-cyan-400/30 bg-cyan-950/30 px-4 text-left text-sm font-semibold text-cyan-100 hover:bg-cyan-900/40"
+      >
+        Simple Generation
+      </button>
 
       <MenuServerSection
         open={menuSectionsOpen.server}

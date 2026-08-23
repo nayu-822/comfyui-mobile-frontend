@@ -28,6 +28,7 @@ import { getCachedNodeTypes, setCachedNodeTypes } from './utils/nodeTypesCache';
 import { buildOutputPreferredViewerImages, type ViewerImage } from './utils/viewerImages';
 import { OutputsPanel } from './components/OutputsPanel';
 import { useOutputsStore } from './hooks/useOutputs';
+import { GenerationPanel } from './components/GenerationPanel/GenerationPanel';
 
 function App() {
   const currentPanel = useNavigationStore((s) => s.currentPanel);
@@ -82,7 +83,8 @@ function App() {
   useAnimatedFavicon(isGenerating);
 
   const handleSwipeLeft = useCallback(() => {
-    if (currentPanel === 'workflow') setCurrentPanel('queue');
+    if (currentPanel === 'generation') setCurrentPanel('workflow');
+    else if (currentPanel === 'workflow') setCurrentPanel('queue');
     else if (currentPanel === 'outputs') setCurrentPanel('workflow');
   }, [currentPanel, setCurrentPanel]);
 
@@ -96,7 +98,7 @@ function App() {
     }
   }, [currentPanel, outputsCurrentFolder, outputsNavigateUp, setCurrentPanel]);
 
-  const canSwipeLeft = currentPanel === 'workflow' || currentPanel === 'outputs';
+  const canSwipeLeft = currentPanel === 'generation' || currentPanel === 'workflow' || currentPanel === 'outputs';
   const canSwipeRight = currentPanel === 'workflow'
     || currentPanel === 'queue'
     || (currentPanel === 'outputs' && Boolean(outputsCurrentFolder));
@@ -292,6 +294,7 @@ function App() {
       >
         <>
           <OutputsPanel visible={currentPanel === 'outputs'} />
+          <GenerationPanel visible={currentPanel === 'generation'} />
           <WorkflowPanel visible={currentPanel === 'workflow'} onImageClick={openViewer} />
           <QueuePanel visible={currentPanel === 'queue'} onImageClick={openViewer} />
         </>

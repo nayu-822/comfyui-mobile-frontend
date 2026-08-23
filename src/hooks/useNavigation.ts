@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
-export type PanelMode = 'workflow' | 'queue' | 'outputs';
+export type PanelMode = 'generation' | 'workflow' | 'queue' | 'outputs';
 
 interface NavigationState {
   currentPanel: PanelMode;
@@ -11,7 +11,7 @@ interface NavigationState {
 export const useNavigationStore = create<NavigationState>()(
   persist(
     (set) => ({
-      currentPanel: 'workflow',
+      currentPanel: 'generation',
       setCurrentPanel: (panel) => {
         set({ currentPanel: panel });
       }

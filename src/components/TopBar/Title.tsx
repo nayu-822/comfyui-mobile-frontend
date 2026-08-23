@@ -3,7 +3,7 @@ import { useI18n } from '@/i18n';
 
 interface TopBarTitleProps {
   title: string;
-  mode?: 'workflow' | 'queue' | 'outputs';
+  mode?: 'generation' | 'workflow' | 'queue' | 'outputs';
   isDirty: boolean;
   hasWorkflow: boolean;
   nodeCountLabel: string;
@@ -27,6 +27,7 @@ export function TopBarTitle({
   const { t } = useI18n();
 
   const resolveSubtitle = () => {
+    if (mode === 'generation') return ' ';
     if (mode === 'workflow') return hasWorkflow ? nodeCountLabel : ' ';
     if (mode !== 'queue') return ' ';
     const runs = historyLength === 1

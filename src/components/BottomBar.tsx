@@ -17,7 +17,7 @@ import { SkipButton } from "./BottomBar/SkipButton";
 import { WorkflowSelectionButton } from "./BottomBar/WorkflowSelectionButton";
 
 export type BottomBarProps = {
-  currentPanel: 'workflow' | 'queue' | 'outputs';
+  currentPanel: 'generation' | 'workflow' | 'queue' | 'outputs';
   viewerOpen?: boolean;
   followQueue?: boolean;
   onToggleFollowQueue?: () => void;
@@ -33,6 +33,7 @@ export function BottomBar(props: BottomBarProps) {
     onOpenFollowQueue,
   } = props;
   const isOutputsPanel = currentPanel === 'outputs';
+  const isGenerationPanel = currentPanel === 'generation';
   // Workflow select mode swaps the queue button for the selection button, but
   // only while the workflow panel is the one showing.
   const workflowSelectionMode = useWorkflowSelectionStore((s) => s.selectionMode);
@@ -131,19 +132,19 @@ export function BottomBar(props: BottomBarProps) {
         id="bottom-bar-content"
         className="flex items-center gap-2 px-1.5 py-2 max-w-lg mx-auto"
       >
-        {!infiniteLoop && !isStopping && <RunCountSelector />}
+        {!isGenerationPanel && !infiniteLoop && !isStopping && <RunCountSelector />}
 
         {/* Infinite-mode "skip to next iteration" belongs with the generation
             controls; the outputs panel is a gallery, so it hides there. */}
-        {!isOutputsPanel && <SkipButton />}
+        {!isOutputsPanel && !isGenerationPanel && <SkipButton />}
 
-        <RunButton />
+        {!isGenerationPanel && <RunButton />}
 
-        {infiniteModeEnabled && <InfiniteLoopToggle />}
+        {infiniteModeEnabled && !isGenerationPanel && <InfiniteLoopToggle />}
 
         {isOutputsPanel && <OutputsActionButton />}
 
-        {!isOutputsPanel && <PinnedWidgetButton />}
+        {!isOutputsPanel && !isGenerationPanel && <PinnedWidgetButton />}
 
         {workflowSelectionActive ? (
           <WorkflowSelectionButton />
