@@ -872,7 +872,7 @@
         "Node name for S&R": "MOBILE_SAVE_IMAGE"
       },
       "widgets_values": [
-        "mobile_sdxl"
+        "%date:yyyyMMdd%_normal/mobile_sdxl"
       ]
     }
   ],
