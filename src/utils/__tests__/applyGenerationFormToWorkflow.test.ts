@@ -165,5 +165,7 @@ describe('applyGenerationFormToWorkflow', () => {
     expect(restored.cfg).toBe(6.5);
     expect(restored.sampler).toBe('dpmpp_2m');
     expect(restored.scheduler).toBe('karras');
+    expect((find(next, 'MOBILE_HIRES_SAMPLER').widgets_values as unknown[])[0]).toBe(42);
+    expect((find(next, 'MOBILE_FACE_DETAILER').widgets_values as unknown[])[3]).toBe(42);
   });
 });

@@ -34,4 +34,65 @@ describe('generationFormValidation', () => {
     next.loras[0].name = 'real-lora.safetensors';
     expect(validateGenerationForm(next)).toEqual([]);
   });
+
+  it('rejects invalid base numeric settings', () => {
+    const next = form();
+    next.checkpoint = 'real-checkpoint.safetensors';
+    next.width = 63;
+    next.height = Number.NaN;
+    next.steps = 0;
+    next.cfg = -0.1;
+    next.seed = -1;
+
+    expect(validateGenerationForm(next)).toEqual([
+      'Width must be at least 64.',
+      'Height must be at least 64.',
+      'Steps must be at least 1.',
+      'CFG must be at least 0.',
+      'Seed must be at least 0.',
+    ]);
+  });
+
+  it('validates Hires and FaceDetailer numeric settings only when enabled', () => {
+    const next = form();
+    next.checkpoint = 'real-checkpoint.safetensors';
+    next.hiresScale = 0;
+    next.hiresSteps = 0;
+    next.hiresCfg = -1;
+    next.hiresDenoise = 2;
+    next.faceGuideSize = 0;
+    next.faceMaxSize = 0;
+    next.faceSteps = 0;
+    next.faceCfg = -1;
+    next.faceDenoise = -1;
+    next.faceBBoxThreshold = 2;
+
+    expect(validateGenerationForm(next)).toEqual([]);
+
+    next.hiresEnabled = true;
+    next.faceDetailerEnabled = true;
+    expect(validateGenerationForm(next)).toEqual([
+      'Hires scale must be at least 1.',
+      'Hires steps must be at least 1.',
+      'Hires CFG must be at least 0.',
+      'Hires denoise must be between 0 and 1.',
+      'Face guide size must be at least 1.',
+      'Face max size must be at least 1.',
+      'Face steps must be at least 1.',
+      'Face CFG must be at least 0.',
+      'Face denoise must be between 0 and 1.',
+      'Face BBox threshold must be between 0 and 1.',
+    ]);
+  });
+
+  it('requires a real upscaler model when Upscaler is enabled', () => {
+    const next = form();
+    next.checkpoint = 'real-checkpoint.safetensors';
+    next.upscaleEnabled = true;
+    next.upscaleModel = 'PUT_UPSCALER_HERE.pth';
+    expect(validateGenerationForm(next)).toEqual(['Choose an upscaler model before generating.']);
+
+    next.upscaleModel = '4x-UltraSharp.pth';
+    expect(validateGenerationForm(next)).toEqual([]);
+  });
 });

@@ -4,6 +4,7 @@ set -Eeuo pipefail
 # One-way copy from local ComfyUI output to Google Drive.
 COMFYUI_DIR="${COMFYUI_DIR:-/workspace/runpod-slim/ComfyUI}"
 COMFYUI_OUTPUT_DIR="${COMFYUI_OUTPUT_DIR:-${COMFYUI_DIR}/output}"
+NETWORK_MODEL_ROOT="${NETWORK_MODEL_ROOT:-/network-models}"
 RCLONE_CONFIG="${RCLONE_CONFIG:-/tmp/rclone.conf}"
 RCLONE_REMOTE_NAME="${RCLONE_REMOTE_NAME:-gdrive}"
 GDRIVE_OUTPUT_PATH="${GDRIVE_OUTPUT_PATH:-sdxl_output/output}"
@@ -17,6 +18,13 @@ is_enabled() {
     1|true|yes|on) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+path_is_within() {
+  local candidate base
+  candidate="$(realpath -m -- "$1")"
+  base="$(realpath -m -- "$2")"
+  [[ "$candidate" == "$base" || "$candidate" == "$base"/* ]]
 }
 
 if ! is_enabled "$ENABLE_OUTPUT_SYNC"; then
@@ -36,6 +44,14 @@ command -v rclone >/dev/null 2>&1 || {
   echo "[runpod] rclone is required for output sync" >&2
   exit 1
 }
+command -v realpath >/dev/null 2>&1 || {
+  echo "[runpod] realpath is required for output sync safety checks" >&2
+  exit 1
+}
+if path_is_within "$COMFYUI_OUTPUT_DIR" "$NETWORK_MODEL_ROOT"; then
+  echo "[runpod] COMFYUI_OUTPUT_DIR must not be under Network Volume $NETWORK_MODEL_ROOT" >&2
+  exit 1
+fi
 
 mkdir -p "$COMFYUI_OUTPUT_DIR"
 REMOTE_PATH="${RCLONE_REMOTE_NAME}:${GDRIVE_OUTPUT_PATH}"

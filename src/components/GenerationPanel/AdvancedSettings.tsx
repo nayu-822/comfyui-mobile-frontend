@@ -62,7 +62,7 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <details className="rounded-xl border border-white/10 bg-slate-900/50" open={!disabled}>
+    <details className="rounded-xl border border-white/10 bg-slate-900/50">
       <summary className="cursor-pointer select-none px-3 py-3 text-sm font-semibold text-slate-100">
         {title}
         {disabled && <span className="ml-2 text-xs font-normal text-slate-500">OFF</span>}

@@ -16,7 +16,9 @@ GDRIVE_LORA_PATH="${GDRIVE_LORA_PATH:-sdxl_lora}"
 GDRIVE_UPSCALER_PATH="${GDRIVE_UPSCALER_PATH:-sdxl_upscaler}"
 GDRIVE_DETAILER_PATH="${GDRIVE_DETAILER_PATH:-sdxl_detailer}"
 
-COMFYUI_PYTHON="${COMFYUI_PYTHON:-python}"
+NETWORK_MODEL_ROOT="${NETWORK_MODEL_ROOT:-/network-models}"
+NETWORK_CHECKPOINT_DIR="${NETWORK_CHECKPOINT_DIR:-${NETWORK_MODEL_ROOT}/checkpoints}"
+
 START_SCRIPT="${START_SCRIPT:-/start.sh}"
 OUTPUT_SYNC_LOG="${OUTPUT_SYNC_LOG:-/tmp/comfyui-mobile-output-sync.log}"
 COMFYUI_OUTPUT_DIR="${COMFYUI_OUTPUT_DIR:-${COMFYUI_DIR}/output}"
@@ -37,6 +39,9 @@ LORA_DIR="${LORA_DIR:-${COMFYUI_DIR}/models/loras}"
 UPSCALE_MODEL_DIR="${UPSCALE_MODEL_DIR:-${COMFYUI_DIR}/models/upscale_models}"
 DETAILER_DIR="${DETAILER_DIR:-${COMFYUI_DIR}/models/ultralytics/bbox}"
 
+# Set by resolve_comfyui_python after the baked ComfyUI directory is available.
+COMFYUI_PYTHON=""
+
 log() { echo "[runpod] $*"; }
 
 is_enabled() {
@@ -44,6 +49,86 @@ is_enabled() {
     1|true|yes|on) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+resolve_path() {
+  realpath -m -- "$1"
+}
+
+path_is_within() {
+  local candidate base
+  candidate="$(resolve_path "$1")"
+  base="$(resolve_path "$2")"
+  [[ "$candidate" == "$base" || "$candidate" == "$base"/* ]]
+}
+
+assert_not_network_volume_path() {
+  local label="$1"
+  local candidate="$2"
+  if path_is_within "$candidate" "$NETWORK_MODEL_ROOT"; then
+    log "$label must not be under Network Volume $NETWORK_MODEL_ROOT: $candidate"
+    exit 1
+  fi
+}
+
+validate_network_volume() {
+  command -v realpath >/dev/null 2>&1 || {
+    log "realpath is required for Network Volume safety checks"
+    exit 1
+  }
+  command -v mountpoint >/dev/null 2>&1 || {
+    log "mountpoint is required to verify Network Volume $NETWORK_MODEL_ROOT"
+    exit 1
+  }
+
+  NETWORK_MODEL_ROOT="$(resolve_path "$NETWORK_MODEL_ROOT")"
+  NETWORK_CHECKPOINT_DIR="$(resolve_path "$NETWORK_CHECKPOINT_DIR")"
+
+  [[ "$NETWORK_MODEL_ROOT" = /* ]] || {
+    log "NETWORK_MODEL_ROOT must be an absolute path: $NETWORK_MODEL_ROOT"
+    exit 1
+  }
+  [[ -d "$NETWORK_MODEL_ROOT" ]] || {
+    log "Network Volume is not mounted at $NETWORK_MODEL_ROOT"
+    exit 1
+  }
+  mountpoint -q "$NETWORK_MODEL_ROOT" || {
+    log "Network Volume is not mounted at $NETWORK_MODEL_ROOT"
+    exit 1
+  }
+  [[ ! -L "$NETWORK_CHECKPOINT_DIR" ]] || {
+    log "NETWORK_CHECKPOINT_DIR must not be a symlink: $NETWORK_CHECKPOINT_DIR"
+    exit 1
+  }
+  path_is_within "$NETWORK_CHECKPOINT_DIR" "$NETWORK_MODEL_ROOT/checkpoints" || {
+    log "NETWORK_CHECKPOINT_DIR must stay under $NETWORK_MODEL_ROOT/checkpoints: $NETWORK_CHECKPOINT_DIR"
+    exit 1
+  }
+
+  local forbidden_entry
+  forbidden_entry="$(find "$NETWORK_MODEL_ROOT" -mindepth 1 -maxdepth 1 ! -name checkpoints -print -quit)"
+  if [[ -n "$forbidden_entry" ]]; then
+    log "Network Volume may contain only the checkpoints directory; unexpected entry: $forbidden_entry"
+    exit 1
+  fi
+}
+
+validate_non_checkpoint_paths() {
+  assert_not_network_volume_path "WORKSPACE_DIR" "$WORKSPACE_DIR"
+  assert_not_network_volume_path "COMFYUI_DIR" "$COMFYUI_DIR"
+  assert_not_network_volume_path "BAKED_COMFYUI_DIR" "$BAKED_COMFYUI_DIR"
+  assert_not_network_volume_path "MOBILE_FRONTEND_SRC" "$MOBILE_FRONTEND_SRC"
+  assert_not_network_volume_path "MOBILE_CUSTOM_NODE_DIR" "$MOBILE_CUSTOM_NODE_DIR"
+  assert_not_network_volume_path "CHECKPOINT_DIR" "$CHECKPOINT_DIR"
+  assert_not_network_volume_path "LORA_DIR" "$LORA_DIR"
+  assert_not_network_volume_path "UPSCALE_MODEL_DIR" "$UPSCALE_MODEL_DIR"
+  assert_not_network_volume_path "DETAILER_DIR" "$DETAILER_DIR"
+  assert_not_network_volume_path "COMFYUI_OUTPUT_DIR" "$COMFYUI_OUTPUT_DIR"
+  assert_not_network_volume_path "IMPACT_PACK_DIR" "$IMPACT_PACK_DIR"
+  assert_not_network_volume_path "IMPACT_SUBPACK_DIR" "$IMPACT_SUBPACK_DIR"
+  assert_not_network_volume_path "RCLONE_CONFIG" "$RCLONE_CONFIG"
+  assert_not_network_volume_path "OUTPUT_SYNC_LOG" "$OUTPUT_SYNC_LOG"
+  assert_not_network_volume_path "START_SCRIPT" "$START_SCRIPT"
 }
 
 prepare_comfyui() {
@@ -64,6 +149,21 @@ prepare_comfyui() {
     log "copied ComfyUI does not contain main.py"
     exit 1
   }
+}
+
+resolve_comfyui_python() {
+  local venv_python="${COMFYUI_DIR}/.venv-cu128/bin/python"
+  if [[ -x "$venv_python" ]]; then
+    COMFYUI_PYTHON="$venv_python"
+  elif command -v python3.12 >/dev/null 2>&1; then
+    COMFYUI_PYTHON="$(command -v python3.12)"
+  elif command -v python3 >/dev/null 2>&1; then
+    COMFYUI_PYTHON="$(command -v python3)"
+  else
+    log "no usable ComfyUI Python found; tried $venv_python, python3.12, python3"
+    exit 1
+  fi
+  log "using ComfyUI Python: $COMFYUI_PYTHON"
 }
 
 install_rclone_if_missing() {
@@ -120,9 +220,157 @@ copy_gdrive_extensions() {
   rclone "${args[@]}"
 }
 
-copy_gdrive_models() {
-  copy_gdrive_extensions "$GDRIVE_MODEL_PATH" "$CHECKPOINT_DIR" \
-    '*.safetensors' '*.ckpt'
+checkpoint_manifest() {
+  rclone lsf \
+    --recursive \
+    --files-only \
+    --format 'sp' \
+    --separator $'\t' \
+    --include '*.safetensors' \
+    --include '*.ckpt' \
+    "${RCLONE_REMOTE_NAME}:${GDRIVE_MODEL_PATH}"
+}
+
+validate_checkpoint_relative_path() {
+  local relative_path="$1"
+  [[ -n "$relative_path" ]] || {
+    log "GDrive checkpoint listing contained an empty path"
+    exit 1
+  }
+  case "/$relative_path/" in
+    /*/../*|*/./*)
+      log "unsafe relative checkpoint path from GDrive: $relative_path"
+      exit 1
+      ;;
+  esac
+  [[ "$relative_path" != /* ]] || {
+    log "absolute checkpoint path from GDrive is not allowed: $relative_path"
+    exit 1
+  }
+}
+
+checkpoint_cache_matches() {
+  local cache_path="$1"
+  local remote_size="$2"
+  [[ -f "$cache_path" && ! -L "$cache_path" ]] || return 1
+  local cache_size
+  cache_size="$(stat -c '%s' -- "$cache_path")"
+  [[ "$cache_size" == "$remote_size" ]]
+}
+
+copy_checkpoint_to_cache() {
+  local relative_path="$1"
+  local remote_size="$2"
+  local remote_path="${RCLONE_REMOTE_NAME}:${GDRIVE_MODEL_PATH}/${relative_path}"
+  local cache_path="${NETWORK_CHECKPOINT_DIR}/${relative_path}"
+  local temp_path="${cache_path}.part"
+
+  if checkpoint_cache_matches "$cache_path" "$remote_size"; then
+    log "reusing checkpoint cache $cache_path (size $remote_size)"
+    return 0
+  fi
+
+  if [[ -d "$cache_path" && ! -L "$cache_path" ]]; then
+    log "checkpoint cache path is a directory: $cache_path"
+    exit 1
+  fi
+  mkdir -p "$(dirname "$cache_path")"
+  rm -f "$temp_path"
+  log "copying checkpoint $remote_path -> $temp_path"
+  rclone copyto "$remote_path" "$temp_path"
+  [[ -f "$temp_path" ]] || {
+    log "rclone did not create checkpoint temporary file: $temp_path"
+    exit 1
+  }
+
+  local copied_size
+  copied_size="$(stat -c '%s' -- "$temp_path")"
+  if [[ "$copied_size" != "$remote_size" ]]; then
+    log "checkpoint size mismatch for $relative_path: expected $remote_size, got $copied_size"
+    rm -f "$temp_path"
+    exit 1
+  fi
+  mv -f "$temp_path" "$cache_path"
+}
+
+prepare_checkpoint_link_dir() {
+  [[ ! -L "$CHECKPOINT_DIR" ]] || {
+    log "CHECKPOINT_DIR must be a local directory, not a symlink: $CHECKPOINT_DIR"
+    exit 1
+  }
+  mkdir -p "$CHECKPOINT_DIR"
+
+  local legacy_file
+  legacy_file="$(find "$CHECKPOINT_DIR" -type f -print -quit)"
+  if [[ -n "$legacy_file" ]]; then
+    local backup_dir="${CHECKPOINT_DIR}.legacy.$$.${RANDOM}"
+    while [[ -e "$backup_dir" || -L "$backup_dir" ]]; do
+      backup_dir="${CHECKPOINT_DIR}.legacy.$$.${RANDOM}"
+    done
+    mv "$CHECKPOINT_DIR" "$backup_dir"
+    mkdir -p "$CHECKPOINT_DIR"
+    log "moved legacy local checkpoint files aside to $backup_dir"
+  fi
+
+  local stale_link
+  while IFS= read -r -d '' stale_link; do
+    log "removing stale checkpoint link $stale_link"
+    rm -f "$stale_link"
+  done < <(find "$CHECKPOINT_DIR" -type l -print0)
+  find "$CHECKPOINT_DIR" -depth -mindepth 1 -type d -empty -delete
+}
+
+link_checkpoint() {
+  local relative_path="$1"
+  local cache_path="${NETWORK_CHECKPOINT_DIR}/${relative_path}"
+  local link_path="${CHECKPOINT_DIR}/${relative_path}"
+  mkdir -p "$(dirname "$link_path")"
+
+  if [[ -d "$link_path" && ! -L "$link_path" ]]; then
+    log "checkpoint link path is a directory: $link_path"
+    exit 1
+  fi
+  if [[ -L "$link_path" ]]; then
+    local current_target
+    current_target="$(readlink -f "$link_path" 2>/dev/null || true)"
+    if [[ "$current_target" == "$cache_path" ]]; then return 0; fi
+    rm -f "$link_path"
+  elif [[ -e "$link_path" ]]; then
+    log "unmanaged local checkpoint path remains: $link_path"
+    exit 1
+  fi
+  ln -s "$cache_path" "$link_path"
+}
+
+sync_gdrive_checkpoints() {
+  local manifest
+  manifest="$(mktemp)"
+  log "listing canonical checkpoints from ${RCLONE_REMOTE_NAME}:${GDRIVE_MODEL_PATH}"
+  checkpoint_manifest > "$manifest"
+
+  # The GDrive manifest is intentionally obtained before touching the local
+  # checkpoint directory or using any Network Volume cache entry.
+  prepare_checkpoint_link_dir
+  mkdir -p "$NETWORK_CHECKPOINT_DIR"
+
+  local remote_size relative_path count=0
+  while IFS=$'\t' read -r remote_size relative_path; do
+    [[ -n "$remote_size" && -n "$relative_path" ]] || continue
+    [[ "$remote_size" =~ ^[0-9]+$ ]] || {
+      log "invalid size in GDrive checkpoint listing: $remote_size"
+      rm -f "$manifest"
+      exit 1
+    }
+    validate_checkpoint_relative_path "$relative_path"
+    copy_checkpoint_to_cache "$relative_path" "$remote_size"
+    link_checkpoint "$relative_path"
+    count=$((count + 1))
+  done < "$manifest"
+  rm -f "$manifest"
+  log "configured $count GDrive checkpoints from Network Volume cache"
+}
+
+copy_gdrive_local_models() {
   copy_gdrive_extensions "$GDRIVE_LORA_PATH" "$LORA_DIR" \
     '*.safetensors' '*.ckpt' '*.pt'
   copy_gdrive_extensions "$GDRIVE_UPSCALER_PATH" "$UPSCALE_MODEL_DIR" \
@@ -220,6 +468,7 @@ start_output_sync() {
     RCLONE_CONFIG="$RCLONE_CONFIG" \
     RCLONE_REMOTE_NAME="$RCLONE_REMOTE_NAME" \
     GDRIVE_OUTPUT_PATH="$GDRIVE_OUTPUT_PATH" \
+    NETWORK_MODEL_ROOT="$NETWORK_MODEL_ROOT" \
     COMFYUI_DIR="$COMFYUI_DIR" \
     COMFYUI_OUTPUT_DIR="$COMFYUI_OUTPUT_DIR" \
     OUTPUT_SYNC_INTERVAL_SECONDS="$OUTPUT_SYNC_INTERVAL_SECONDS" \
@@ -229,15 +478,17 @@ start_output_sync() {
   log "output sync worker started with pid $!"
 }
 
-mkdir -p "$WORKSPACE_DIR"
-prepare_comfyui
-mkdir -p "$COMFYUI_DIR/custom_nodes" "$COMFYUI_OUTPUT_DIR" \
-  "$CHECKPOINT_DIR" "$LORA_DIR" "$UPSCALE_MODEL_DIR" "$DETAILER_DIR"
-
+validate_network_volume
+validate_non_checkpoint_paths
 install_rclone_if_missing
 configure_rclone
+prepare_comfyui
+resolve_comfyui_python
+mkdir -p "$COMFYUI_DIR/custom_nodes" "$LORA_DIR" "$UPSCALE_MODEL_DIR" \
+  "$DETAILER_DIR" "$COMFYUI_OUTPUT_DIR"
 link_mobile_frontend
-copy_gdrive_models
+sync_gdrive_checkpoints
+copy_gdrive_local_models
 install_impact_pack
 start_output_sync
 

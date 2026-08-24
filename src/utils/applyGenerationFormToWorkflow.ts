@@ -118,7 +118,8 @@ export function applyGenerationFormToWorkflow(
   workflow = updateNamedNode(workflow, nodeNames.hiresUpscale, (node) =>
     setGenerationWidgetValue(node, 1, finiteNumber(form.hiresScale, 1.5), 'scale_by'));
   workflow = updateNamedNode(workflow, nodeNames.hiresSampler, (node) => {
-    let next = setGenerationWidgetValue(node, 2, Math.round(finiteNumber(form.hiresSteps, 15)), 'steps');
+    let next = setGenerationWidgetValue(node, 0, Math.round(finiteNumber(form.seed, 0)), 'seed');
+    next = setGenerationWidgetValue(next, 2, Math.round(finiteNumber(form.hiresSteps, 15)), 'steps');
     next = setGenerationWidgetValue(next, 3, finiteNumber(form.hiresCfg, 5), 'cfg');
     next = setGenerationWidgetValue(next, 4, form.hiresSampler, 'sampler_name');
     next = setGenerationWidgetValue(next, 5, form.hiresScheduler, 'scheduler');
@@ -131,6 +132,7 @@ export function applyGenerationFormToWorkflow(
   workflow = updateNamedNode(workflow, nodeNames.faceDetailer, (node) => {
     let next = setGenerationWidgetValue(node, 0, Math.round(finiteNumber(form.faceGuideSize, 768)), 'guide_size');
     next = setGenerationWidgetValue(next, 2, Math.round(finiteNumber(form.faceMaxSize, 1024)), 'max_size');
+    next = setGenerationWidgetValue(next, 3, Math.round(finiteNumber(form.seed, 0)), 'seed');
     next = setGenerationWidgetValue(next, 5, Math.round(finiteNumber(form.faceSteps, 15)), 'steps');
     next = setGenerationWidgetValue(next, 6, finiteNumber(form.faceCfg, 5), 'cfg');
     next = setGenerationWidgetValue(next, 7, form.sampler, 'sampler_name');

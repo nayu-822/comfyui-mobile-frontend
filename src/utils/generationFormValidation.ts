@@ -10,6 +10,14 @@ export function isEmptyOrPlaceholderModelName(value: string): boolean {
   return PLACEHOLDER_MODEL_NAME.test(filename);
 }
 
+function isFiniteAtLeast(value: number, minimum: number): boolean {
+  return Number.isFinite(value) && value >= minimum;
+}
+
+function isFiniteBetween(value: number, minimum: number, maximum: number): boolean {
+  return Number.isFinite(value) && value >= minimum && value <= maximum;
+}
+
 /** Return user-facing errors that must be fixed before a simple generation can be queued. */
 export function validateGenerationForm(form: GenerationFormState): string[] {
   const errors: string[] = [];
@@ -23,6 +31,32 @@ export function validateGenerationForm(form: GenerationFormState): string[] {
       errors.push(`Choose a model for LoRA ${index + 1} or turn it off.`);
     }
   });
+
+  if (!isFiniteAtLeast(form.width, 64)) errors.push('Width must be at least 64.');
+  if (!isFiniteAtLeast(form.height, 64)) errors.push('Height must be at least 64.');
+  if (!isFiniteAtLeast(form.steps, 1)) errors.push('Steps must be at least 1.');
+  if (!isFiniteAtLeast(form.cfg, 0)) errors.push('CFG must be at least 0.');
+  if (!isFiniteAtLeast(form.seed, 0)) errors.push('Seed must be at least 0.');
+
+  if (form.hiresEnabled) {
+    if (!isFiniteAtLeast(form.hiresScale, 1)) errors.push('Hires scale must be at least 1.');
+    if (!isFiniteAtLeast(form.hiresSteps, 1)) errors.push('Hires steps must be at least 1.');
+    if (!isFiniteAtLeast(form.hiresCfg, 0)) errors.push('Hires CFG must be at least 0.');
+    if (!isFiniteBetween(form.hiresDenoise, 0, 1)) errors.push('Hires denoise must be between 0 and 1.');
+  }
+
+  if (form.faceDetailerEnabled) {
+    if (!isFiniteAtLeast(form.faceGuideSize, 1)) errors.push('Face guide size must be at least 1.');
+    if (!isFiniteAtLeast(form.faceMaxSize, 1)) errors.push('Face max size must be at least 1.');
+    if (!isFiniteAtLeast(form.faceSteps, 1)) errors.push('Face steps must be at least 1.');
+    if (!isFiniteAtLeast(form.faceCfg, 0)) errors.push('Face CFG must be at least 0.');
+    if (!isFiniteBetween(form.faceDenoise, 0, 1)) errors.push('Face denoise must be between 0 and 1.');
+    if (!isFiniteBetween(form.faceBBoxThreshold, 0, 1)) errors.push('Face BBox threshold must be between 0 and 1.');
+  }
+
+  if (form.upscaleEnabled && isEmptyOrPlaceholderModelName(form.upscaleModel)) {
+    errors.push('Choose an upscaler model before generating.');
+  }
 
   return errors;
 }
