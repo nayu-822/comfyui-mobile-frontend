@@ -2,38 +2,37 @@
 
 The RunPod Template clones this repository into
 `/workspace/comfyui-mobile-frontend-src` and runs
-`scripts/runpod/bootstrap.sh`. The bootstrap expects the official ComfyUI
-image to provide the baked application at `/opt/comfyui-baked`.
+`scripts/runpod/bootstrap.sh`. The bootstrap keeps RunPod's standard
+`/workspace/runpod-slim/ComfyUI` directory hierarchy intact and expects the
+official image to provide the baked application at `/opt/comfyui-baked`.
 
-The Network Volume is reserved exclusively for SDXL base Checkpoint caches.
-LoRA, Upscaler, Detailer, output files, the frontend, and custom nodes remain
-on the Pod local filesystem. The bootstrap fails if the Network Volume is not
-mounted at the expected path or if any protected local path is configured
-under it.
+`/workspace` is the Network Volume. Only persistent data belongs there. New
+generated images and ComfyUI temporary files are placed on the Container Disk
+under `/runpod-local`.
 
-## Layout
+## Storage layout
 
 ~~~text
-GDrive:
-sdxl_model/
-sdxl_lora/
-sdxl_upscaler/
-sdxl_detailer/
-sdxl_output/
+Network Volume: /workspace
+├── models/
+│   └── checkpoints/
+│       └── *.safetensors / *.ckpt
+└── runpod-slim/
+    └── ComfyUI/
+        ├── custom_nodes/
+        ├── user/
+        ├── models/
+        ├── output -> /runpod-local/output
+        └── temp   -> /runpod-local/temp
 
-Network Volume:
-/network-models/
-└─ checkpoints/
-
-ComfyUI:
-models/
-├─ checkpoints/       -> symlinks to Network Volume Checkpoints
-├─ loras/             -> Pod local
-├─ upscale_models/    -> Pod local
-└─ ultralytics/bbox/  -> Pod local
-
-output/               -> Pod local, one-way copy to GDrive
+Container Disk: /runpod-local
+├── output/
+└── temp/
 ~~~
+
+`/workspace/runpod-slim` is always a normal directory. Bootstrap never removes
+it and never replaces it with a symlink; this preserves compatibility with
+RunPod's official `/start.sh`.
 
 ## RunPod Template bootstrap
 
@@ -56,48 +55,64 @@ git clone \
 exec bash "${BOOT_DIR}/scripts/runpod/bootstrap.sh"
 ~~~
 
-For release deployment, set `MOBILE_FRONTEND_REF` to `main` or a
-commit-pinned ref. Do not put `RCLONE_CONFIG_B64` or any other secret in the
-repository.
+The only directory removed by this Template snippet is the fresh source clone
+at `/workspace/comfyui-mobile-frontend-src`; it does not remove
+`/workspace/runpod-slim`.
 
 ## Checkpoint management
 
 `gdrive:sdxl_model` is the source of truth for the available Checkpoint list.
-Bootstrap first obtains a recursive GDrive file manifest for `*.safetensors`
-and `*.ckpt`; it never enumerates the Network Volume to decide which models
-ComfyUI should expose.
-
+Bootstrap first obtains a recursive manifest for `*.safetensors` and `*.ckpt`.
 For every GDrive-relative file path:
 
-1. A same-name Network Volume cache is reused only when its file size matches.
-2. New or changed files are copied to a `.part` file and atomically moved into
-   place after the downloaded size matches the GDrive manifest.
-3. `ComfyUI/models/checkpoints/<relative path>` is symlinked to the cache.
-4. Stale ComfyUI Checkpoint symlinks are removed when they are absent from the
-   current GDrive manifest. Old cache files on the Network Volume are not
-   automatically deleted.
+1. The persistent cache path is
+   `/workspace/models/checkpoints/<relative path>`.
+2. A same-name cache is reused when its file size matches the GDrive manifest.
+3. New or changed files are downloaded to `.part`, size-checked, and moved
+   into place only after a successful download.
+4. ComfyUI receives a symlink at
+   `ComfyUI/models/checkpoints/<relative path>` pointing to the persistent
+   cache.
+5. Stale ComfyUI Checkpoint symlinks are removed when they are absent from the
+   current GDrive manifest. Old cache files are not automatically deleted.
 
-If `/network-models` is not a mounted Network Volume, bootstrap stops instead
-of copying all Checkpoints into Pod local storage.
+If `/workspace` is not mounted as a Network Volume, bootstrap stops instead of
+copying Checkpoints to Container Disk. Legacy regular Checkpoint files found
+under ComfyUI are moved into the persistent Checkpoint area when possible;
+unmanaged leftovers are preserved in a timestamped migration backup.
 
-## Pod-local model copies
+## Other model files
 
-The following files are copied directly from GDrive to the Pod-local ComfyUI
-directories. None of these destinations may be under `/network-models`.
+LoRA, Upscaler, and Detailer files continue to be copied from GDrive using
+their existing extension filters. They are persistent model files under the
+ComfyUI tree on `/workspace`; only output and temp are redirected to the
+Container Disk.
 
-| GDrive path | Local destination | Extensions |
+| GDrive path | ComfyUI destination | Extensions |
 | --- | --- | --- |
 | `gdrive:sdxl_lora` | `ComfyUI/models/loras` | `*.safetensors`, `*.ckpt`, `*.pt` |
 | `gdrive:sdxl_upscaler` | `ComfyUI/models/upscale_models` | `*.pth`, `*.pt`, `*.safetensors` |
 | `gdrive:sdxl_detailer` | `ComfyUI/models/ultralytics/bbox` | `*.pt`, `*.pth` |
 
-## Output copy
+## Output and temp
 
-`sync_outputs.sh` runs one-way `rclone copy` from the Pod-local
-`ComfyUI/output/` to `gdrive:sdxl_output/output/`. It never copies old GDrive
-images back to the Pod, and it does not classify, delete, or flatten files.
-The frontend's existing `YYYYMMDD_normal/` and `YYYYMMDD_upscale/` folders are
-therefore preserved.
+At every bootstrap, the following directories are created on Container Disk:
+
+~~~bash
+mkdir -p /runpod-local/output
+mkdir -p /runpod-local/temp
+~~~
+
+ComfyUI's normal `output` and `temp` paths are symlinked individually to those
+directories. Existing real directories are first copied without overwriting
+files already on Container Disk, then moved to a timestamped migration backup;
+they are never unconditionally deleted. Existing output is also copied to
+Google Drive before migration when output sync is enabled.
+
+`sync_outputs.sh` performs one-way `rclone copy` from the physical
+`/runpod-local/output` directory to `gdrive:sdxl_output`. It never copies old
+GDrive images back to the Pod and preserves subdirectories such as
+`YYYYMMDD_normal/` and `YYYYMMDD_upscale/`.
 
 ## ComfyUI Python and custom nodes
 
@@ -110,7 +125,7 @@ available Python in this order:
 
 Impact Pack defaults to ref `Main` and Impact Subpack defaults to ref `main`.
 SAM2-related requirements are excluded by default; set
-`INSTALL_SAM2_DEPENDENCIES=true` only when they are needed.
+`INSTALL_SAM2_DEPENDENCIES=true` only when needed.
 
 The existing Template clone is linked to
 `ComfyUI/custom_nodes/comfyui-mobile-frontend`. Bootstrap requires
@@ -124,28 +139,29 @@ Required secret:
 - `RCLONE_CONFIG_B64` — base64-encoded rclone config, decoded to
   `/tmp/rclone.conf` by default.
 
-GDrive and Network Volume:
+Storage:
+
+- `COMFYUI_DIR` (default: `/workspace/runpod-slim/ComfyUI`)
+- `NETWORK_CHECKPOINT_DIR` (default: `/workspace/models/checkpoints`)
+- `LOCAL_EPHEMERAL_ROOT` (default: `/runpod-local`)
+- `LOCAL_OUTPUT_DIR` (default: `/runpod-local/output`)
+- `LOCAL_TEMP_DIR` (default: `/runpod-local/temp`)
+
+GDrive and output worker:
 
 - `RCLONE_REMOTE_NAME` (default: `gdrive`)
 - `GDRIVE_MODEL_PATH` (default: `sdxl_model`)
 - `GDRIVE_LORA_PATH` (default: `sdxl_lora`)
 - `GDRIVE_UPSCALER_PATH` (default: `sdxl_upscaler`)
 - `GDRIVE_DETAILER_PATH` (default: `sdxl_detailer`)
-- `NETWORK_MODEL_ROOT` (default: `/network-models`)
-- `NETWORK_CHECKPOINT_DIR` (default: `/network-models/checkpoints`)
-- `GDRIVE_OUTPUT_PATH` (default: `sdxl_output/output`)
-
-Output worker:
-
+- `GDRIVE_OUTPUT_PATH` (default: `sdxl_output`)
 - `ENABLE_OUTPUT_SYNC` (default: `true`)
 - `OUTPUT_SYNC_INTERVAL_SECONDS` (default: `60`)
 - `OUTPUT_MIN_AGE` (default: `15s`)
-- `COMFYUI_OUTPUT_DIR` (default: `${COMFYUI_DIR}/output`)
 
 Other controls:
 
 - `MOBILE_FRONTEND_REF`
-- `COMFYUI_DIR` (default: `/workspace/runpod-slim/ComfyUI`)
 - `BAKED_COMFYUI_DIR` (default: `/opt/comfyui-baked`)
 - `MOBILE_FRONTEND_SRC`
 - `START_SCRIPT` (default: `/start.sh`)
@@ -163,4 +179,19 @@ rclone:
 
 ~~~bash
 bash scripts/runpod/bootstrap_static_test.sh
+~~~
+
+## Storage verification commands
+
+After bootstrap, these commands verify the intended physical layout:
+
+~~~bash
+mountpoint /workspace
+test -d /workspace/models/checkpoints
+test -d /workspace/runpod-slim
+test "$(readlink -f /workspace/runpod-slim/ComfyUI/output)" = /runpod-local/output
+test "$(readlink -f /workspace/runpod-slim/ComfyUI/temp)" = /runpod-local/temp
+find /workspace/runpod-slim/ComfyUI/models/checkpoints -type l -print
+find /runpod-local/output -maxdepth 2 -type f -print
+find /runpod-local/temp -maxdepth 2 -type f -print
 ~~~

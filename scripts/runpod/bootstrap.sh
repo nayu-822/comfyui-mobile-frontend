@@ -2,7 +2,8 @@
 set -Eeuo pipefail
 
 WORKSPACE_DIR="${WORKSPACE_DIR:-/workspace}"
-COMFYUI_DIR="${COMFYUI_DIR:-/workspace/runpod-slim/ComfyUI}"
+RUNPOD_SLIM_DIR="${RUNPOD_SLIM_DIR:-${WORKSPACE_DIR}/runpod-slim}"
+COMFYUI_DIR="${COMFYUI_DIR:-${RUNPOD_SLIM_DIR}/ComfyUI}"
 BAKED_COMFYUI_DIR="${BAKED_COMFYUI_DIR:-/opt/comfyui-baked}"
 
 MOBILE_FRONTEND_SRC="${MOBILE_FRONTEND_SRC:-${WORKSPACE_DIR}/comfyui-mobile-frontend-src}"
@@ -15,14 +16,15 @@ GDRIVE_MODEL_PATH="${GDRIVE_MODEL_PATH:-sdxl_model}"
 GDRIVE_LORA_PATH="${GDRIVE_LORA_PATH:-sdxl_lora}"
 GDRIVE_UPSCALER_PATH="${GDRIVE_UPSCALER_PATH:-sdxl_upscaler}"
 GDRIVE_DETAILER_PATH="${GDRIVE_DETAILER_PATH:-sdxl_detailer}"
+GDRIVE_OUTPUT_PATH="${GDRIVE_OUTPUT_PATH:-sdxl_output}"
 
-NETWORK_MODEL_ROOT="${NETWORK_MODEL_ROOT:-/network-models}"
-NETWORK_CHECKPOINT_DIR="${NETWORK_CHECKPOINT_DIR:-${NETWORK_MODEL_ROOT}/checkpoints}"
+NETWORK_CHECKPOINT_DIR="${NETWORK_CHECKPOINT_DIR:-${WORKSPACE_DIR}/models/checkpoints}"
+LOCAL_EPHEMERAL_ROOT="${LOCAL_EPHEMERAL_ROOT:-/runpod-local}"
+LOCAL_OUTPUT_DIR="${LOCAL_OUTPUT_DIR:-${COMFYUI_OUTPUT_DIR:-${LOCAL_EPHEMERAL_ROOT}/output}}"
+LOCAL_TEMP_DIR="${LOCAL_TEMP_DIR:-${LOCAL_EPHEMERAL_ROOT}/temp}"
 
 START_SCRIPT="${START_SCRIPT:-/start.sh}"
 OUTPUT_SYNC_LOG="${OUTPUT_SYNC_LOG:-/tmp/comfyui-mobile-output-sync.log}"
-COMFYUI_OUTPUT_DIR="${COMFYUI_OUTPUT_DIR:-${COMFYUI_DIR}/output}"
-GDRIVE_OUTPUT_PATH="${GDRIVE_OUTPUT_PATH:-sdxl_output/output}"
 ENABLE_OUTPUT_SYNC="${ENABLE_OUTPUT_SYNC:-true}"
 OUTPUT_SYNC_INTERVAL_SECONDS="${OUTPUT_SYNC_INTERVAL_SECONDS:-60}"
 OUTPUT_MIN_AGE="${OUTPUT_MIN_AGE:-15s}"
@@ -62,91 +64,149 @@ path_is_within() {
   [[ "$candidate" == "$base" || "$candidate" == "$base"/* ]]
 }
 
-assert_not_network_volume_path() {
+assert_not_workspace_path() {
   local label="$1"
   local candidate="$2"
-  if path_is_within "$candidate" "$NETWORK_MODEL_ROOT"; then
-    log "$label must not be under Network Volume $NETWORK_MODEL_ROOT: $candidate"
+  if path_is_within "$candidate" "$WORKSPACE_DIR"; then
+    log "$label must stay on Container Disk and must not be under $WORKSPACE_DIR: $candidate"
     exit 1
   fi
 }
 
-validate_network_volume() {
+validate_runpod_storage_layout() {
   command -v realpath >/dev/null 2>&1 || {
-    log "realpath is required for Network Volume safety checks"
+    log "realpath is required for storage safety checks"
     exit 1
   }
   command -v mountpoint >/dev/null 2>&1 || {
-    log "mountpoint is required to verify Network Volume $NETWORK_MODEL_ROOT"
+    log "mountpoint is required to verify the /workspace Network Volume"
     exit 1
   }
 
-  NETWORK_MODEL_ROOT="$(resolve_path "$NETWORK_MODEL_ROOT")"
+  local configured_workspace_dir="$WORKSPACE_DIR"
+  local configured_runpod_slim_dir="$RUNPOD_SLIM_DIR"
+  local configured_comfyui_dir="$COMFYUI_DIR"
+  local configured_checkpoint_dir="$NETWORK_CHECKPOINT_DIR"
+  local configured_local_root="$LOCAL_EPHEMERAL_ROOT"
+  [[ ! -L "$configured_workspace_dir" ]] || {
+    log "$configured_workspace_dir must be a real Network Volume mount path"
+    exit 1
+  }
+  [[ ! -L "$configured_runpod_slim_dir" ]] || {
+    log "$configured_runpod_slim_dir must remain a normal directory, not a symlink"
+    exit 1
+  }
+  [[ ! -L "$configured_comfyui_dir" ]] || {
+    log "$configured_comfyui_dir must remain a normal directory, not a symlink"
+    exit 1
+  }
+  [[ ! -L "$configured_checkpoint_dir" ]] || {
+    log "NETWORK_CHECKPOINT_DIR must not be a symlink: $configured_checkpoint_dir"
+    exit 1
+  }
+  [[ ! -L "$configured_local_root" ]] || {
+    log "LOCAL_EPHEMERAL_ROOT must be a real Container Disk directory: $configured_local_root"
+    exit 1
+  }
+
+  WORKSPACE_DIR="$(resolve_path "$WORKSPACE_DIR")"
+  RUNPOD_SLIM_DIR="$(resolve_path "$RUNPOD_SLIM_DIR")"
+  COMFYUI_DIR="$(resolve_path "$COMFYUI_DIR")"
   NETWORK_CHECKPOINT_DIR="$(resolve_path "$NETWORK_CHECKPOINT_DIR")"
+  LOCAL_EPHEMERAL_ROOT="$(resolve_path "$LOCAL_EPHEMERAL_ROOT")"
+  LOCAL_OUTPUT_DIR="$(resolve_path "$LOCAL_OUTPUT_DIR")"
+  LOCAL_TEMP_DIR="$(resolve_path "$LOCAL_TEMP_DIR")"
 
-  [[ "$NETWORK_MODEL_ROOT" = /* ]] || {
-    log "NETWORK_MODEL_ROOT must be an absolute path: $NETWORK_MODEL_ROOT"
+  [[ "$WORKSPACE_DIR" = /* ]] || {
+    log "WORKSPACE_DIR must be an absolute path: $WORKSPACE_DIR"
     exit 1
   }
-  [[ -d "$NETWORK_MODEL_ROOT" ]] || {
-    log "Network Volume is not mounted at $NETWORK_MODEL_ROOT"
+  [[ -d "$WORKSPACE_DIR" ]] && mountpoint -q "$WORKSPACE_DIR" || {
+    log "Network Volume is not mounted at $WORKSPACE_DIR"
     exit 1
   }
-  mountpoint -q "$NETWORK_MODEL_ROOT" || {
-    log "Network Volume is not mounted at $NETWORK_MODEL_ROOT"
+
+  [[ ! -L "$RUNPOD_SLIM_DIR" ]] || {
+    log "$RUNPOD_SLIM_DIR must remain a normal directory, not a symlink"
+    exit 1
+  }
+  path_is_within "$COMFYUI_DIR" "$RUNPOD_SLIM_DIR" || {
+    log "COMFYUI_DIR must stay under $RUNPOD_SLIM_DIR: $COMFYUI_DIR"
+    exit 1
+  }
+  path_is_within "$NETWORK_CHECKPOINT_DIR" "$WORKSPACE_DIR/models/checkpoints" || {
+    log "NETWORK_CHECKPOINT_DIR must stay under $WORKSPACE_DIR/models/checkpoints: $NETWORK_CHECKPOINT_DIR"
     exit 1
   }
   [[ ! -L "$NETWORK_CHECKPOINT_DIR" ]] || {
     log "NETWORK_CHECKPOINT_DIR must not be a symlink: $NETWORK_CHECKPOINT_DIR"
     exit 1
   }
-  path_is_within "$NETWORK_CHECKPOINT_DIR" "$NETWORK_MODEL_ROOT/checkpoints" || {
-    log "NETWORK_CHECKPOINT_DIR must stay under $NETWORK_MODEL_ROOT/checkpoints: $NETWORK_CHECKPOINT_DIR"
+
+  [[ ! -L "$LOCAL_EPHEMERAL_ROOT" ]] || {
+    log "LOCAL_EPHEMERAL_ROOT must be a real Container Disk directory: $LOCAL_EPHEMERAL_ROOT"
     exit 1
   }
+  assert_not_workspace_path "LOCAL_EPHEMERAL_ROOT" "$LOCAL_EPHEMERAL_ROOT"
+  assert_not_workspace_path "LOCAL_OUTPUT_DIR" "$LOCAL_OUTPUT_DIR"
+  assert_not_workspace_path "LOCAL_TEMP_DIR" "$LOCAL_TEMP_DIR"
+  assert_not_workspace_path "RCLONE_CONFIG" "$RCLONE_CONFIG"
+  assert_not_workspace_path "OUTPUT_SYNC_LOG" "$OUTPUT_SYNC_LOG"
+  assert_not_workspace_path "START_SCRIPT" "$START_SCRIPT"
+  assert_not_workspace_path "BAKED_COMFYUI_DIR" "$BAKED_COMFYUI_DIR"
 
-  local forbidden_entry
-  forbidden_entry="$(find "$NETWORK_MODEL_ROOT" -mindepth 1 -maxdepth 1 ! -name checkpoints -print -quit)"
-  if [[ -n "$forbidden_entry" ]]; then
-    log "Network Volume may contain only the checkpoints directory; unexpected entry: $forbidden_entry"
+  path_is_within "$LOCAL_OUTPUT_DIR" "$LOCAL_EPHEMERAL_ROOT" || {
+    log "LOCAL_OUTPUT_DIR must stay under LOCAL_EPHEMERAL_ROOT: $LOCAL_OUTPUT_DIR"
     exit 1
-  fi
+  }
+  path_is_within "$LOCAL_TEMP_DIR" "$LOCAL_EPHEMERAL_ROOT" || {
+    log "LOCAL_TEMP_DIR must stay under LOCAL_EPHEMERAL_ROOT: $LOCAL_TEMP_DIR"
+    exit 1
+  }
 }
 
-validate_non_checkpoint_paths() {
-  assert_not_network_volume_path "WORKSPACE_DIR" "$WORKSPACE_DIR"
-  assert_not_network_volume_path "COMFYUI_DIR" "$COMFYUI_DIR"
-  assert_not_network_volume_path "BAKED_COMFYUI_DIR" "$BAKED_COMFYUI_DIR"
-  assert_not_network_volume_path "MOBILE_FRONTEND_SRC" "$MOBILE_FRONTEND_SRC"
-  assert_not_network_volume_path "MOBILE_CUSTOM_NODE_DIR" "$MOBILE_CUSTOM_NODE_DIR"
-  assert_not_network_volume_path "CHECKPOINT_DIR" "$CHECKPOINT_DIR"
-  assert_not_network_volume_path "LORA_DIR" "$LORA_DIR"
-  assert_not_network_volume_path "UPSCALE_MODEL_DIR" "$UPSCALE_MODEL_DIR"
-  assert_not_network_volume_path "DETAILER_DIR" "$DETAILER_DIR"
-  assert_not_network_volume_path "COMFYUI_OUTPUT_DIR" "$COMFYUI_OUTPUT_DIR"
-  assert_not_network_volume_path "IMPACT_PACK_DIR" "$IMPACT_PACK_DIR"
-  assert_not_network_volume_path "IMPACT_SUBPACK_DIR" "$IMPACT_SUBPACK_DIR"
-  assert_not_network_volume_path "RCLONE_CONFIG" "$RCLONE_CONFIG"
-  assert_not_network_volume_path "OUTPUT_SYNC_LOG" "$OUTPUT_SYNC_LOG"
-  assert_not_network_volume_path "START_SCRIPT" "$START_SCRIPT"
+log_storage_layout() {
+  log "Network Volume checkpoints: $NETWORK_CHECKPOINT_DIR"
+  log "ComfyUI: $COMFYUI_DIR"
+  log "Local output: $LOCAL_OUTPUT_DIR"
+  log "Local temp: $LOCAL_TEMP_DIR"
+  log "Google Drive output: ${RCLONE_REMOTE_NAME}:${GDRIVE_OUTPUT_PATH}"
 }
 
 prepare_comfyui() {
+  [[ ! -L "$RUNPOD_SLIM_DIR" ]] || {
+    log "$RUNPOD_SLIM_DIR must remain a normal directory, not a symlink"
+    exit 1
+  }
+  [[ ! -L "$COMFYUI_DIR" ]] || {
+    log "$COMFYUI_DIR must remain a normal directory, not a symlink"
+    exit 1
+  }
+  mkdir -p "$RUNPOD_SLIM_DIR" "$COMFYUI_DIR"
+
   if [[ -f "$COMFYUI_DIR/main.py" ]]; then
     log "using ComfyUI at $COMFYUI_DIR"
     return 0
   fi
 
-  log "copying baked ComfyUI $BAKED_COMFYUI_DIR -> $COMFYUI_DIR"
-  rm -rf "$COMFYUI_DIR"
-  mkdir -p "$(dirname "$COMFYUI_DIR")"
   [[ -d "$BAKED_COMFYUI_DIR" ]] || {
     log "baked ComfyUI directory is missing: $BAKED_COMFYUI_DIR"
     exit 1
   }
-  cp -a "$BAKED_COMFYUI_DIR" "$COMFYUI_DIR"
+  log "copying baked ComfyUI contents $BAKED_COMFYUI_DIR -> $COMFYUI_DIR"
+  # Never remove COMFYUI_DIR or runpod-slim: RunPod's /start.sh expects the
+  # standard directory hierarchy to remain in place.
+  cp -a "$BAKED_COMFYUI_DIR"/. "$COMFYUI_DIR"/
   [[ -f "$COMFYUI_DIR/main.py" ]] || {
     log "copied ComfyUI does not contain main.py"
+    exit 1
+  }
+}
+
+ensure_local_ephemeral_dirs() {
+  mkdir -p "$LOCAL_EPHEMERAL_ROOT" "$LOCAL_OUTPUT_DIR" "$LOCAL_TEMP_DIR"
+  [[ -d "$LOCAL_OUTPUT_DIR" && -d "$LOCAL_TEMP_DIR" ]] || {
+    log "could not create local output/temp directories under $LOCAL_EPHEMERAL_ROOT"
     exit 1
   }
 }
@@ -200,6 +260,64 @@ configure_rclone() {
   log "rclone config prepared at $RCLONE_CONFIG"
 }
 
+unique_backup_path() {
+  local source_path="$1"
+  local backup_path="${source_path}.migrated.$(date -u +%Y%m%d%H%M%S).$$"
+  while [[ -e "$backup_path" || -L "$backup_path" ]]; do
+    backup_path="${source_path}.migrated.$(date -u +%Y%m%d%H%M%S).$$.${RANDOM}"
+  done
+  printf '%s' "$backup_path"
+}
+
+sync_legacy_output() {
+  local source_path="$1"
+  if ! is_enabled "$ENABLE_OUTPUT_SYNC"; then
+    log "legacy output sync disabled; preserving $source_path locally"
+    return 0
+  fi
+
+  local remote_path="${RCLONE_REMOTE_NAME}:${GDRIVE_OUTPUT_PATH}"
+  log "syncing legacy output $source_path -> $remote_path before migration"
+  if ! rclone copy --create-empty-src-dirs "$source_path/" "$remote_path"; then
+    log "legacy output sync failed; source will still be preserved at its migration backup"
+  fi
+}
+
+migrate_storage_directory() {
+  local source_path="$1"
+  local target_path="$2"
+  local label="$3"
+
+  if [[ -L "$source_path" ]]; then
+    local current_target expected_target
+    current_target="$(readlink -f "$source_path" 2>/dev/null || true)"
+    expected_target="$(readlink -f "$target_path" 2>/dev/null || true)"
+    if [[ "$current_target" == "$expected_target" ]]; then return 0; fi
+    local symlink_backup
+    symlink_backup="$(unique_backup_path "$source_path")"
+    mv "$source_path" "$symlink_backup"
+    log "moved incorrect $label symlink aside to $symlink_backup"
+  elif [[ -e "$source_path" ]]; then
+    [[ -d "$source_path" ]] || {
+      log "$source_path exists but is not a directory"
+      exit 1
+    }
+    if [[ "$label" == "output" ]]; then
+      sync_legacy_output "$source_path"
+    fi
+    log "copying existing $label contents $source_path -> $target_path"
+    # -n preserves files already present on the Container Disk.
+    cp -a -n -- "$source_path"/. "$target_path"/
+    local directory_backup
+    directory_backup="$(unique_backup_path "$source_path")"
+    mv "$source_path" "$directory_backup"
+    log "moved existing $label directory aside to $directory_backup"
+  fi
+
+  ln -s "$target_path" "$source_path"
+  log "linked $source_path -> $target_path"
+}
+
 copy_gdrive_extensions() {
   local remote_path="$1"
   local destination="$2"
@@ -249,6 +367,28 @@ validate_checkpoint_relative_path() {
   }
 }
 
+migrate_legacy_checkpoint_files() {
+  [[ ! -L "$CHECKPOINT_DIR" ]] || {
+    log "CHECKPOINT_DIR must be a directory, not a symlink: $CHECKPOINT_DIR"
+    exit 1
+  }
+  [[ -d "$CHECKPOINT_DIR" ]] || return 0
+
+  local legacy_file relative_path cache_path
+  while IFS= read -r -d '' legacy_file; do
+    relative_path="${legacy_file#"$CHECKPOINT_DIR"/}"
+    validate_checkpoint_relative_path "$relative_path"
+    cache_path="${NETWORK_CHECKPOINT_DIR}/${relative_path}"
+    if [[ -e "$cache_path" || -L "$cache_path" ]]; then
+      log "preserving existing legacy checkpoint because cache path exists: $legacy_file"
+      continue
+    fi
+    mkdir -p "$(dirname "$cache_path")"
+    mv "$legacy_file" "$cache_path"
+    log "moved legacy checkpoint $legacy_file -> $cache_path"
+  done < <(find "$CHECKPOINT_DIR" -type f -print0)
+}
+
 checkpoint_cache_matches() {
   local cache_path="$1"
   local remote_size="$2"
@@ -270,7 +410,11 @@ copy_checkpoint_to_cache() {
     return 0
   fi
 
-  if [[ -d "$cache_path" && ! -L "$cache_path" ]]; then
+  [[ ! -L "$cache_path" ]] || {
+    log "checkpoint cache path must be a regular file, not a symlink: $cache_path"
+    exit 1
+  }
+  if [[ -d "$cache_path" ]]; then
     log "checkpoint cache path is a directory: $cache_path"
     exit 1
   fi
@@ -295,7 +439,7 @@ copy_checkpoint_to_cache() {
 
 prepare_checkpoint_link_dir() {
   [[ ! -L "$CHECKPOINT_DIR" ]] || {
-    log "CHECKPOINT_DIR must be a local directory, not a symlink: $CHECKPOINT_DIR"
+    log "CHECKPOINT_DIR must be a directory, not a symlink: $CHECKPOINT_DIR"
     exit 1
   }
   mkdir -p "$CHECKPOINT_DIR"
@@ -303,13 +447,11 @@ prepare_checkpoint_link_dir() {
   local legacy_file
   legacy_file="$(find "$CHECKPOINT_DIR" -type f -print -quit)"
   if [[ -n "$legacy_file" ]]; then
-    local backup_dir="${CHECKPOINT_DIR}.legacy.$$.${RANDOM}"
-    while [[ -e "$backup_dir" || -L "$backup_dir" ]]; do
-      backup_dir="${CHECKPOINT_DIR}.legacy.$$.${RANDOM}"
-    done
+    local backup_dir
+    backup_dir="$(unique_backup_path "$CHECKPOINT_DIR")"
     mv "$CHECKPOINT_DIR" "$backup_dir"
     mkdir -p "$CHECKPOINT_DIR"
-    log "moved legacy local checkpoint files aside to $backup_dir"
+    log "moved unmanaged local checkpoint directory aside to $backup_dir"
   fi
 
   local stale_link
@@ -348,10 +490,11 @@ sync_gdrive_checkpoints() {
   log "listing canonical checkpoints from ${RCLONE_REMOTE_NAME}:${GDRIVE_MODEL_PATH}"
   checkpoint_manifest > "$manifest"
 
-  # The GDrive manifest is intentionally obtained before touching the local
-  # checkpoint directory or using any Network Volume cache entry.
-  prepare_checkpoint_link_dir
+  # Obtain the GDrive manifest before using any local checkpoint entry to
+  # decide which files ComfyUI should expose.
   mkdir -p "$NETWORK_CHECKPOINT_DIR"
+  migrate_legacy_checkpoint_files
+  prepare_checkpoint_link_dir
 
   local remote_size relative_path count=0
   while IFS=$'\t' read -r remote_size relative_path; do
@@ -367,7 +510,7 @@ sync_gdrive_checkpoints() {
     count=$((count + 1))
   done < "$manifest"
   rm -f "$manifest"
-  log "configured $count GDrive checkpoints from Network Volume cache"
+  log "configured $count GDrive checkpoints from $NETWORK_CHECKPOINT_DIR"
 }
 
 copy_gdrive_local_models() {
@@ -468,9 +611,12 @@ start_output_sync() {
     RCLONE_CONFIG="$RCLONE_CONFIG" \
     RCLONE_REMOTE_NAME="$RCLONE_REMOTE_NAME" \
     GDRIVE_OUTPUT_PATH="$GDRIVE_OUTPUT_PATH" \
-    NETWORK_MODEL_ROOT="$NETWORK_MODEL_ROOT" \
+    WORKSPACE_DIR="$WORKSPACE_DIR" \
     COMFYUI_DIR="$COMFYUI_DIR" \
-    COMFYUI_OUTPUT_DIR="$COMFYUI_OUTPUT_DIR" \
+    LOCAL_EPHEMERAL_ROOT="$LOCAL_EPHEMERAL_ROOT" \
+    LOCAL_OUTPUT_DIR="$LOCAL_OUTPUT_DIR" \
+    LOCAL_TEMP_DIR="$LOCAL_TEMP_DIR" \
+    COMFYUI_OUTPUT_DIR="$LOCAL_OUTPUT_DIR" \
     OUTPUT_SYNC_INTERVAL_SECONDS="$OUTPUT_SYNC_INTERVAL_SECONDS" \
     OUTPUT_MIN_AGE="$OUTPUT_MIN_AGE" \
     ENABLE_OUTPUT_SYNC="$ENABLE_OUTPUT_SYNC" \
@@ -478,17 +624,20 @@ start_output_sync() {
   log "output sync worker started with pid $!"
 }
 
-validate_network_volume
-validate_non_checkpoint_paths
+validate_runpod_storage_layout
+ensure_local_ephemeral_dirs
 install_rclone_if_missing
 configure_rclone
 prepare_comfyui
 resolve_comfyui_python
-mkdir -p "$COMFYUI_DIR/custom_nodes" "$LORA_DIR" "$UPSCALE_MODEL_DIR" \
-  "$DETAILER_DIR" "$COMFYUI_OUTPUT_DIR"
+mkdir -p "$COMFYUI_DIR/custom_nodes" "$NETWORK_CHECKPOINT_DIR" \
+  "$LORA_DIR" "$UPSCALE_MODEL_DIR" "$DETAILER_DIR"
 link_mobile_frontend
 sync_gdrive_checkpoints
+migrate_storage_directory "$COMFYUI_DIR/output" "$LOCAL_OUTPUT_DIR" output
+migrate_storage_directory "$COMFYUI_DIR/temp" "$LOCAL_TEMP_DIR" temp
 copy_gdrive_local_models
+log_storage_layout
 install_impact_pack
 start_output_sync
 

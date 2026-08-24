@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# One-way copy from local ComfyUI output to Google Drive.
+# One-way copy from the Container Disk output directory to Google Drive.
+WORKSPACE_DIR="${WORKSPACE_DIR:-/workspace}"
 COMFYUI_DIR="${COMFYUI_DIR:-/workspace/runpod-slim/ComfyUI}"
-COMFYUI_OUTPUT_DIR="${COMFYUI_OUTPUT_DIR:-${COMFYUI_DIR}/output}"
-NETWORK_MODEL_ROOT="${NETWORK_MODEL_ROOT:-/network-models}"
+LOCAL_EPHEMERAL_ROOT="${LOCAL_EPHEMERAL_ROOT:-/runpod-local}"
+LOCAL_OUTPUT_DIR="${LOCAL_OUTPUT_DIR:-${COMFYUI_OUTPUT_DIR:-${LOCAL_EPHEMERAL_ROOT}/output}}"
+LOCAL_TEMP_DIR="${LOCAL_TEMP_DIR:-${LOCAL_EPHEMERAL_ROOT}/temp}"
 RCLONE_CONFIG="${RCLONE_CONFIG:-/tmp/rclone.conf}"
 RCLONE_REMOTE_NAME="${RCLONE_REMOTE_NAME:-gdrive}"
-GDRIVE_OUTPUT_PATH="${GDRIVE_OUTPUT_PATH:-sdxl_output/output}"
+GDRIVE_OUTPUT_PATH="${GDRIVE_OUTPUT_PATH:-sdxl_output}"
 OUTPUT_SYNC_INTERVAL_SECONDS="${OUTPUT_SYNC_INTERVAL_SECONDS:-60}"
 OUTPUT_MIN_AGE="${OUTPUT_MIN_AGE:-15s}"
 ENABLE_OUTPUT_SYNC="${ENABLE_OUTPUT_SYNC:-true}"
@@ -48,12 +50,25 @@ command -v realpath >/dev/null 2>&1 || {
   echo "[runpod] realpath is required for output sync safety checks" >&2
   exit 1
 }
-if path_is_within "$COMFYUI_OUTPUT_DIR" "$NETWORK_MODEL_ROOT"; then
-  echo "[runpod] COMFYUI_OUTPUT_DIR must not be under Network Volume $NETWORK_MODEL_ROOT" >&2
+
+if path_is_within "$LOCAL_EPHEMERAL_ROOT" "$WORKSPACE_DIR"; then
+  echo "[runpod] LOCAL_EPHEMERAL_ROOT must not be under Network Volume $WORKSPACE_DIR" >&2
   exit 1
 fi
+if ! path_is_within "$LOCAL_OUTPUT_DIR" "$LOCAL_EPHEMERAL_ROOT"; then
+  echo "[runpod] LOCAL_OUTPUT_DIR must stay under LOCAL_EPHEMERAL_ROOT" >&2
+  exit 1
+fi
+if ! path_is_within "$LOCAL_TEMP_DIR" "$LOCAL_EPHEMERAL_ROOT"; then
+  echo "[runpod] LOCAL_TEMP_DIR must stay under LOCAL_EPHEMERAL_ROOT" >&2
+  exit 1
+fi
+[[ ! -L "$LOCAL_OUTPUT_DIR" ]] || {
+  echo "[runpod] LOCAL_OUTPUT_DIR must be the physical sync source, not a symlink" >&2
+  exit 1
+}
 
-mkdir -p "$COMFYUI_OUTPUT_DIR"
+mkdir -p "$LOCAL_EPHEMERAL_ROOT" "$LOCAL_OUTPUT_DIR" "$LOCAL_TEMP_DIR"
 REMOTE_PATH="${RCLONE_REMOTE_NAME}:${GDRIVE_OUTPUT_PATH}"
 
 sync_once() {
@@ -65,8 +80,8 @@ sync_once() {
       args+=(--min-age "$OUTPUT_MIN_AGE")
     fi
   fi
-  args+=("$COMFYUI_OUTPUT_DIR/" "$REMOTE_PATH")
-  echo "[runpod] copying $COMFYUI_OUTPUT_DIR -> $REMOTE_PATH"
+  args+=("$LOCAL_OUTPUT_DIR/" "$REMOTE_PATH")
+  echo "[runpod] copying $LOCAL_OUTPUT_DIR -> $REMOTE_PATH"
   rclone "${args[@]}"
 }
 
