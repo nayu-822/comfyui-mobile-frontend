@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Copy ComfyUI's output tree as-is. The frontend chooses the date_normal or
-# date_upscale prefix; this worker deliberately does not inspect filenames.
-COMFYUI_DIR="${COMFYUI_DIR:-/workspace/ComfyUI}"
-OUTPUT_DIR="${COMFYUI_OUTPUT_DIR:-${COMFYUI_DIR}/output}"
+# One-way copy from local ComfyUI output to Google Drive.
+COMFYUI_DIR="${COMFYUI_DIR:-/workspace/runpod-slim/ComfyUI}"
+COMFYUI_OUTPUT_DIR="${COMFYUI_OUTPUT_DIR:-${COMFYUI_DIR}/output}"
+RCLONE_CONFIG="${RCLONE_CONFIG:-/tmp/rclone.conf}"
 RCLONE_REMOTE_NAME="${RCLONE_REMOTE_NAME:-gdrive}"
+GDRIVE_OUTPUT_PATH="${GDRIVE_OUTPUT_PATH:-sdxl_output/output}"
 OUTPUT_SYNC_INTERVAL_SECONDS="${OUTPUT_SYNC_INTERVAL_SECONDS:-60}"
-OUTPUT_MIN_AGE="${OUTPUT_MIN_AGE:-30}"
+OUTPUT_MIN_AGE="${OUTPUT_MIN_AGE:-15s}"
 ENABLE_OUTPUT_SYNC="${ENABLE_OUTPUT_SYNC:-true}"
 SYNC_ONCE="${SYNC_ONCE:-false}"
 
@@ -23,21 +24,24 @@ if ! is_enabled "$ENABLE_OUTPUT_SYNC"; then
   exit 0
 fi
 
-if [[ -z "${GDRIVE_OUTPUT_PATH:-}" ]]; then
-  echo "[runpod] GDRIVE_OUTPUT_PATH is empty; output sync is not configured"
-  exit 0
-fi
-
-if ! command -v rclone >/dev/null 2>&1; then
+[[ -f "$RCLONE_CONFIG" ]] || {
+  echo "[runpod] rclone config is missing: $RCLONE_CONFIG" >&2
+  exit 1
+}
+[[ -n "$GDRIVE_OUTPUT_PATH" ]] || {
+  echo "[runpod] GDRIVE_OUTPUT_PATH is empty" >&2
+  exit 1
+}
+command -v rclone >/dev/null 2>&1 || {
   echo "[runpod] rclone is required for output sync" >&2
   exit 1
-fi
+}
 
-mkdir -p "$OUTPUT_DIR"
+mkdir -p "$COMFYUI_OUTPUT_DIR"
 REMOTE_PATH="${RCLONE_REMOTE_NAME}:${GDRIVE_OUTPUT_PATH}"
 
 sync_once() {
-  local -a args=(copy "$OUTPUT_DIR/" "$REMOTE_PATH" --create-empty-src-dirs)
+  local -a args=(copy --create-empty-src-dirs)
   if [[ -n "$OUTPUT_MIN_AGE" && "$OUTPUT_MIN_AGE" != "0" ]]; then
     if [[ "$OUTPUT_MIN_AGE" =~ ^[0-9]+$ ]]; then
       args+=(--min-age "${OUTPUT_MIN_AGE}s")
@@ -45,7 +49,8 @@ sync_once() {
       args+=(--min-age "$OUTPUT_MIN_AGE")
     fi
   fi
-  echo "[runpod] syncing ${OUTPUT_DIR} -> ${REMOTE_PATH}"
+  args+=("$COMFYUI_OUTPUT_DIR/" "$REMOTE_PATH")
+  echo "[runpod] copying $COMFYUI_OUTPUT_DIR -> $REMOTE_PATH"
   rclone "${args[@]}"
 }
 
