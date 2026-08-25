@@ -183,6 +183,12 @@ if it is absent, bootstrap logs the missing model and does not substitute an
 external model. A best-effort post-start health check polls `/object_info`,
 `/mobile/`, and the workflow userdata API for up to 120 seconds.
 
+Bootstrap uses RunPod's `/opt/comfyui-runtime-constraints.txt` as
+`PIP_CONSTRAINT` when the file is available. An existing `PIP_CONSTRAINT` is
+preserved, and the selected constraint is inherited by the ComfyUI Manager,
+Impact Pack, and Impact Subpack dependency installs. If the runtime constraint
+file is unavailable, bootstrap logs the condition and continues.
+
 ## Environment variables
 
 Required secret:
@@ -220,6 +226,7 @@ Other controls:
 - `COMFYUI_WORKFLOW_DIR` (default: `${COMFYUI_DIR}/user/default/workflows`)
 - `COMFYUI_CANONICAL_WORKFLOW` (default: `${COMFYUI_WORKFLOW_DIR}/mobile_sdxl_default.json`)
 - `COMFYUI_ARGS_FILE` (default: `${RUNPOD_SLIM_DIR}/comfyui_args.txt`)
+- `RUNTIME_PIP_CONSTRAINT_FILE` (default: `/opt/comfyui-runtime-constraints.txt`)
 - `ENABLE_COMFYUI_MANAGER` (default: `true`)
 - `COMFYUI_MANAGER_PACKAGE` (default: `comfyui-manager`)
 - `ENABLE_STARTUP_HEALTH_CHECK` (default: `true`)

@@ -23,6 +23,20 @@ assert_not_contains() {
   fi
 }
 
+assert_order() {
+  local file="$1"
+  local first="$2"
+  local second="$3"
+  local first_line second_line
+
+  first_line="$(grep -nF -- "$first" "$file" | tail -n1 | cut -d: -f1)"
+  second_line="$(grep -nF -- "$second" "$file" | tail -n1 | cut -d: -f1)"
+  [[ -n "$first_line" && -n "$second_line" && "$first_line" -lt "$second_line" ]] || {
+    echo "ordering contract failed in $file: $first must precede $second" >&2
+    exit 1
+  }
+}
+
 bash -n "$BOOTSTRAP"
 bash -n "$SYNC"
 
@@ -47,6 +61,10 @@ assert_contains "$BOOTSTRAP" 'ensure_comfyui_manager()'
 assert_contains "$BOOTSTRAP" 'ENABLE_COMFYUI_MANAGER="${ENABLE_COMFYUI_MANAGER:-true}"'
 assert_contains "$BOOTSTRAP" 'COMFYUI_MANAGER_PACKAGE="${COMFYUI_MANAGER_PACKAGE:-comfyui-manager}"'
 assert_contains "$BOOTSTRAP" 'COMFYUI_ARGS_FILE="${COMFYUI_ARGS_FILE:-${RUNPOD_SLIM_DIR}/comfyui_args.txt}"'
+assert_contains "$BOOTSTRAP" 'RUNTIME_PIP_CONSTRAINT_FILE="${RUNTIME_PIP_CONSTRAINT_FILE:-/opt/comfyui-runtime-constraints.txt}"'
+assert_contains "$BOOTSTRAP" '/opt/comfyui-runtime-constraints.txt'
+assert_contains "$BOOTSTRAP" 'configure_runtime_pip_constraints()'
+assert_contains "$BOOTSTRAP" 'export PIP_CONSTRAINT'
 assert_contains "$BOOTSTRAP" 'pip install -U --pre "$COMFYUI_MANAGER_PACKAGE"'
 assert_contains "$BOOTSTRAP" 'pip show "$COMFYUI_MANAGER_PACKAGE"'
 assert_contains "$BOOTSTRAP" 'manager_requirements.txt'
@@ -93,6 +111,10 @@ assert_contains "$SYNC" 'LOCAL_OUTPUT_DIR must stay under LOCAL_EPHEMERAL_ROOT'
 assert_not_contains "$SYNC" 'rclone sync'
 assert_not_contains "$SYNC" 'copy "${RCLONE_REMOTE_NAME}:$GDRIVE_OUTPUT_PATH"'
 
+assert_order "$BOOTSTRAP" 'prepare_comfyui' 'configure_runtime_pip_constraints'
+assert_order "$BOOTSTRAP" 'configure_runtime_pip_constraints' 'ensure_comfyui_runtime_venv'
+assert_order "$BOOTSTRAP" 'configure_runtime_pip_constraints' 'ensure_comfyui_manager'
+
 behavior_tmp="$(mktemp -d)"
 trap 'rm -rf -- "$behavior_tmp"' EXIT
 export WORKSPACE_DIR="$behavior_tmp/workspace"
@@ -102,11 +124,31 @@ export MOBILE_FRONTEND_SRC="$behavior_tmp/comfyui-mobile-frontend-src"
 export MOBILE_CUSTOM_NODE_DIR="$COMFYUI_DIR/custom_nodes/comfyui-mobile-frontend"
 export COMFYUI_ARGS_FILE="$behavior_tmp/comfyui_args.txt"
 export ENABLE_COMFYUI_MANAGER=true
+export RUNTIME_PIP_CONSTRAINT_FILE="$behavior_tmp/runtime-constraints.txt"
 
 mkdir -p "$COMFYUI_DIR/custom_nodes" "$MOBILE_FRONTEND_SRC/dist"
 printf '%s\n' '# test custom node' > "$MOBILE_FRONTEND_SRC/__init__.py"
 printf '%s\n' '<html></html>' > "$MOBILE_FRONTEND_SRC/dist/index.html"
 source "$BOOTSTRAP"
+
+printf '%s\n' '# runtime constraint' > "$RUNTIME_PIP_CONSTRAINT_FILE"
+unset PIP_CONSTRAINT
+configure_runtime_pip_constraints
+[[ "$PIP_CONSTRAINT" == "$RUNTIME_PIP_CONSTRAINT_FILE" ]] || {
+  echo "pip constraint behavior test failed: runtime constraint was not exported" >&2
+  exit 1
+}
+
+existing_constraint="$behavior_tmp/existing-constraints.txt"
+export PIP_CONSTRAINT="$existing_constraint"
+configure_runtime_pip_constraints
+[[ "$PIP_CONSTRAINT" == "$existing_constraint" ]] || {
+  echo "pip constraint behavior test failed: existing constraint was overwritten" >&2
+  exit 1
+}
+
+unset PIP_CONSTRAINT
+RUNTIME_PIP_CONSTRAINT_FILE="$behavior_tmp/missing-constraints.txt" configure_runtime_pip_constraints
 
 if ln -s "$MOBILE_FRONTEND_SRC" "$MOBILE_CUSTOM_NODE_DIR" 2>/dev/null; then
   :

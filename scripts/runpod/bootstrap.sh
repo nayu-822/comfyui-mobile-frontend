@@ -28,6 +28,7 @@ LOCAL_TEMP_DIR="${LOCAL_TEMP_DIR:-${LOCAL_EPHEMERAL_ROOT}/temp}"
 
 START_SCRIPT="${START_SCRIPT:-/start.sh}"
 COMFYUI_ARGS_FILE="${COMFYUI_ARGS_FILE:-${RUNPOD_SLIM_DIR}/comfyui_args.txt}"
+RUNTIME_PIP_CONSTRAINT_FILE="${RUNTIME_PIP_CONSTRAINT_FILE:-/opt/comfyui-runtime-constraints.txt}"
 OUTPUT_SYNC_LOG="${OUTPUT_SYNC_LOG:-/tmp/comfyui-mobile-output-sync.log}"
 ENABLE_OUTPUT_SYNC="${ENABLE_OUTPUT_SYNC:-true}"
 OUTPUT_SYNC_INTERVAL_SECONDS="${OUTPUT_SYNC_INTERVAL_SECONDS:-60}"
@@ -219,6 +220,21 @@ ensure_local_ephemeral_dirs() {
     log "could not create local output/temp directories under $LOCAL_EPHEMERAL_ROOT"
     exit 1
   }
+}
+
+configure_runtime_pip_constraints() {
+  if [[ -n "${PIP_CONSTRAINT:-}" ]]; then
+    export PIP_CONSTRAINT
+    log "using existing pip constraint: $PIP_CONSTRAINT"
+    return 0
+  fi
+
+  if [[ -f "$RUNTIME_PIP_CONSTRAINT_FILE" ]]; then
+    export PIP_CONSTRAINT="$RUNTIME_PIP_CONSTRAINT_FILE"
+    log "using RunPod runtime pip constraints: $PIP_CONSTRAINT"
+  else
+    log "RunPod runtime pip constraint file is not available: $RUNTIME_PIP_CONSTRAINT_FILE"
+  fi
 }
 
 ensure_comfyui_runtime_venv() {
@@ -928,6 +944,7 @@ bootstrap_main() {
   install_rclone_if_missing
   configure_rclone
   prepare_comfyui
+  configure_runtime_pip_constraints
   ensure_comfyui_runtime_venv
   resolve_comfyui_python
   ensure_comfyui_manager
