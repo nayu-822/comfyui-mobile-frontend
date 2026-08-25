@@ -27,10 +27,17 @@ LOCAL_OUTPUT_DIR="${LOCAL_OUTPUT_DIR:-${COMFYUI_OUTPUT_DIR:-${LOCAL_EPHEMERAL_RO
 LOCAL_TEMP_DIR="${LOCAL_TEMP_DIR:-${LOCAL_EPHEMERAL_ROOT}/temp}"
 
 START_SCRIPT="${START_SCRIPT:-/start.sh}"
+COMFYUI_ARGS_FILE="${COMFYUI_ARGS_FILE:-${RUNPOD_SLIM_DIR}/comfyui_args.txt}"
 OUTPUT_SYNC_LOG="${OUTPUT_SYNC_LOG:-/tmp/comfyui-mobile-output-sync.log}"
 ENABLE_OUTPUT_SYNC="${ENABLE_OUTPUT_SYNC:-true}"
 OUTPUT_SYNC_INTERVAL_SECONDS="${OUTPUT_SYNC_INTERVAL_SECONDS:-60}"
 OUTPUT_MIN_AGE="${OUTPUT_MIN_AGE:-15s}"
+
+ENABLE_COMFYUI_MANAGER="${ENABLE_COMFYUI_MANAGER:-true}"
+COMFYUI_MANAGER_PACKAGE="${COMFYUI_MANAGER_PACKAGE:-comfyui-manager}"
+ENABLE_STARTUP_HEALTH_CHECK="${ENABLE_STARTUP_HEALTH_CHECK:-true}"
+STARTUP_HEALTH_CHECK_TIMEOUT_SECONDS="${STARTUP_HEALTH_CHECK_TIMEOUT_SECONDS:-120}"
+HEALTH_CHECK_LOG="${HEALTH_CHECK_LOG:-/tmp/comfyui-mobile-health-check.log}"
 
 INSTALL_CUSTOM_NODE_REQUIREMENTS="${INSTALL_CUSTOM_NODE_REQUIREMENTS:-true}"
 INSTALL_SAM2_DEPENDENCIES="${INSTALL_SAM2_DEPENDENCIES:-false}"
@@ -214,6 +221,38 @@ ensure_local_ephemeral_dirs() {
   }
 }
 
+ensure_comfyui_runtime_venv() {
+  local venv_dir="${COMFYUI_DIR}/.venv-cu128"
+  local venv_python="${venv_dir}/bin/python"
+  if [[ -x "$venv_python" ]]; then
+    log "using existing ComfyUI runtime venv: $venv_dir"
+    return 0
+  fi
+
+  if [[ -e "$venv_dir" || -L "$venv_dir" ]]; then
+    log "ComfyUI runtime venv exists but is incomplete: $venv_dir"
+    exit 1
+  fi
+  command -v python3.12 >/dev/null 2>&1 || {
+    log "python3.12 is required to create the ComfyUI runtime venv: $venv_dir"
+    exit 1
+  }
+
+  log "creating ComfyUI runtime venv: $venv_dir"
+  python3.12 -m venv --system-site-packages "$venv_dir"
+  [[ -x "$venv_python" ]] || {
+    log "ComfyUI runtime venv Python was not created: $venv_python"
+    exit 1
+  }
+  if ! "$venv_python" -m pip --version >/dev/null 2>&1; then
+    "$venv_python" -m ensurepip --upgrade
+  fi
+  "$venv_python" -m pip --version >/dev/null 2>&1 || {
+    log "ComfyUI runtime venv has no usable pip: $venv_python"
+    exit 1
+  }
+}
+
 resolve_comfyui_python() {
   local venv_python="${COMFYUI_DIR}/.venv-cu128/bin/python"
   if [[ -x "$venv_python" ]]; then
@@ -227,6 +266,62 @@ resolve_comfyui_python() {
     exit 1
   fi
   log "using ComfyUI Python: $COMFYUI_PYTHON"
+}
+
+ensure_comfyui_manager() {
+  if ! is_enabled "$ENABLE_COMFYUI_MANAGER"; then
+    log "ComfyUI Manager installation disabled"
+    return 0
+  fi
+
+  if [[ -f "$COMFYUI_DIR/manager_requirements.txt" ]]; then
+    log "installing ComfyUI Manager requirements with $COMFYUI_PYTHON"
+    if ! "$COMFYUI_PYTHON" -m pip install -r "$COMFYUI_DIR/manager_requirements.txt"; then
+      log "ComfyUI Manager installation failed"
+      exit 1
+    fi
+  fi
+
+  log "installing $COMFYUI_MANAGER_PACKAGE with $COMFYUI_PYTHON"
+  if ! "$COMFYUI_PYTHON" -m pip install -U --pre "$COMFYUI_MANAGER_PACKAGE"; then
+    log "ComfyUI Manager installation failed"
+    exit 1
+  fi
+  "$COMFYUI_PYTHON" -m pip show "$COMFYUI_MANAGER_PACKAGE" >/dev/null 2>&1 || {
+    log "ComfyUI Manager installation failed"
+    exit 1
+  }
+  log "ComfyUI Manager package is installed"
+}
+
+configure_comfyui_manager_args() {
+  if ! is_enabled "$ENABLE_COMFYUI_MANAGER"; then return 0; fi
+
+  mkdir -p "$(dirname -- "$COMFYUI_ARGS_FILE")"
+  [[ ! -d "$COMFYUI_ARGS_FILE" ]] || {
+    log "ComfyUI args path is a directory: $COMFYUI_ARGS_FILE"
+    exit 1
+  }
+  touch "$COMFYUI_ARGS_FILE"
+  if ! grep -Eq '^[[:space:]]*--enable-manager([[:space:]]|$)' "$COMFYUI_ARGS_FILE"; then
+    printf '%s\n' '--enable-manager' >> "$COMFYUI_ARGS_FILE"
+  fi
+  log "ComfyUI Manager enabled via $COMFYUI_ARGS_FILE"
+}
+
+verify_comfyui_manager_install() {
+  if ! is_enabled "$ENABLE_COMFYUI_MANAGER"; then return 0; fi
+
+  "$COMFYUI_PYTHON" -m pip show "$COMFYUI_MANAGER_PACKAGE" >/dev/null 2>&1 || {
+    log "ComfyUI Manager installation failed"
+    exit 1
+  }
+  if [[ ! -f "$COMFYUI_ARGS_FILE" ]] || \
+    ! grep -Eq '^[[:space:]]*--enable-manager([[:space:]]|$)' "$COMFYUI_ARGS_FILE"; then
+    log "--enable-manager is missing from $COMFYUI_ARGS_FILE"
+    exit 1
+  fi
+  log "ComfyUI Manager installation verified"
 }
 
 install_rclone_if_missing() {
@@ -559,46 +654,223 @@ install_impact_requirements() {
 }
 
 install_impact_pack() {
-  clone_if_missing "$IMPACT_PACK_DIR" \
+  if ! clone_if_missing "$IMPACT_PACK_DIR" \
     "${IMPACT_PACK_REPO:-https://github.com/ltdrdata/ComfyUI-Impact-Pack.git}" \
-    "$IMPACT_PACK_REF"
-  clone_if_missing "$IMPACT_SUBPACK_DIR" \
+    "$IMPACT_PACK_REF"; then
+    log "ComfyUI-Impact-Pack installation failed"
+    exit 1
+  fi
+  if ! clone_if_missing "$IMPACT_SUBPACK_DIR" \
     "${IMPACT_SUBPACK_REPO:-https://github.com/ltdrdata/ComfyUI-Impact-Subpack.git}" \
-    "$IMPACT_SUBPACK_REF"
+    "$IMPACT_SUBPACK_REF"; then
+    log "ComfyUI-Impact-Subpack installation failed"
+    exit 1
+  fi
 
   if ! is_enabled "$INSTALL_CUSTOM_NODE_REQUIREMENTS"; then return 0; fi
-  install_impact_requirements "$IMPACT_PACK_DIR/requirements.txt"
-  install_impact_requirements "$IMPACT_SUBPACK_DIR/requirements.txt"
+  if ! install_impact_requirements "$IMPACT_PACK_DIR/requirements.txt"; then
+    log "ComfyUI-Impact-Pack requirements installation failed"
+    exit 1
+  fi
+  if ! install_impact_requirements "$IMPACT_SUBPACK_DIR/requirements.txt"; then
+    log "ComfyUI-Impact-Subpack requirements installation failed"
+    exit 1
+  fi
 }
 
-link_mobile_frontend() {
+verify_required_custom_node_files() {
+  [[ -d "$IMPACT_PACK_DIR" && ! -L "$IMPACT_PACK_DIR" ]] || {
+    log "required custom node directory is missing: $IMPACT_PACK_DIR"
+    exit 1
+  }
+  [[ -f "$IMPACT_PACK_DIR/__init__.py" ]] || {
+    log "ComfyUI-Impact-Pack __init__.py is missing: $IMPACT_PACK_DIR/__init__.py"
+    exit 1
+  }
+  [[ -d "$IMPACT_SUBPACK_DIR" && ! -L "$IMPACT_SUBPACK_DIR" ]] || {
+    log "required custom node directory is missing: $IMPACT_SUBPACK_DIR"
+    exit 1
+  }
+  [[ -f "$IMPACT_SUBPACK_DIR/__init__.py" ]] || {
+    log "ComfyUI-Impact-Subpack __init__.py is missing: $IMPACT_SUBPACK_DIR/__init__.py"
+    exit 1
+  }
+  log "required custom node pack present for FaceDetailer: $IMPACT_PACK_DIR"
+  log "required custom node pack present for UltralyticsDetectorProvider: $IMPACT_SUBPACK_DIR"
+
+  local face_model="${DETAILER_DIR}/face_yolov8m.pt"
+  if [[ -f "$face_model" ]]; then
+    log "FaceDetailer model is available: $face_model"
+  else
+    log "FaceDetailer model is missing: $face_model (expected from ${RCLONE_REMOTE_NAME}:${GDRIVE_DETAILER_PATH})"
+  fi
+}
+
+start_post_start_health_check() {
+  if ! is_enabled "$ENABLE_STARTUP_HEALTH_CHECK"; then
+    log "post-start health check disabled"
+    return 0
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    log "post-start health check skipped: curl is not available"
+    return 0
+  fi
+  [[ "$STARTUP_HEALTH_CHECK_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || {
+    log "post-start health check timeout is invalid: $STARTUP_HEALTH_CHECK_TIMEOUT_SECONDS"
+    return 0
+  }
+
+  mkdir -p "$(dirname -- "$HEALTH_CHECK_LOG")"
+  (
+    health_deadline=$((SECONDS + STARTUP_HEALTH_CHECK_TIMEOUT_SECONDS))
+    health_base_url="http://127.0.0.1:8188"
+    health_object_info=""
+    health_workflow_data=""
+    health_mobile_status=""
+
+    while (( SECONDS < health_deadline )); do
+      health_object_info="$(curl --fail --silent --max-time 5 \
+        "$health_base_url/object_info" 2>/dev/null || true)"
+      health_mobile_status="$(curl --silent --location --output /dev/null \
+        --write-out '%{http_code}' --max-time 5 \
+        "$health_base_url/mobile/" 2>/dev/null || true)"
+      health_workflow_data="$(curl --fail --silent --max-time 5 \
+        "$health_base_url/api/userdata?dir=workflows&recurse=true&split=false&full_info=true" \
+        2>/dev/null || true)"
+
+      if [[ "$health_mobile_status" == 2?? ]] && \
+        grep -Fq '"FaceDetailer"' <<<"$health_object_info" && \
+        grep -Fq '"UltralyticsDetectorProvider"' <<<"$health_object_info" && \
+        grep -Fq 'mobile_sdxl_default.json' <<<"$health_workflow_data"; then
+        log "required node available: FaceDetailer"
+        log "required node available: UltralyticsDetectorProvider"
+        log "mobile frontend route is available: /mobile/"
+        log "canonical workflow is available"
+        exit 0
+      fi
+      sleep 2
+    done
+
+    if grep -Fq '"FaceDetailer"' <<<"$health_object_info"; then
+      log "required node available: FaceDetailer"
+    else
+      log "required node missing after startup: FaceDetailer"
+    fi
+    if grep -Fq '"UltralyticsDetectorProvider"' <<<"$health_object_info"; then
+      log "required node available: UltralyticsDetectorProvider"
+    else
+      log "required node missing after startup: UltralyticsDetectorProvider"
+    fi
+    if [[ "$health_mobile_status" == 2?? ]]; then
+      log "mobile frontend route is available: /mobile/"
+    else
+      log "mobile frontend route is unavailable after startup: /mobile/ (HTTP $health_mobile_status)"
+    fi
+    if grep -Fq 'mobile_sdxl_default.json' <<<"$health_workflow_data"; then
+      log "canonical workflow is available"
+    else
+      log "canonical workflow is unavailable after startup"
+    fi
+    log "post-start health check timed out after ${STARTUP_HEALTH_CHECK_TIMEOUT_SECONDS}s"
+  ) >> "$HEALTH_CHECK_LOG" 2>&1 &
+  log "post-start health check worker started with pid $!"
+}
+
+validate_mobile_frontend_destination() {
+  local custom_nodes_root="${COMFYUI_DIR}/custom_nodes"
+  local custom_nodes_root_real
+  custom_nodes_root_real="$(resolve_path "$custom_nodes_root")"
+
+  local destination_parent destination_name destination_parent_real
+  destination_parent="$(dirname -- "$MOBILE_CUSTOM_NODE_DIR")"
+  destination_name="$(basename -- "$MOBILE_CUSTOM_NODE_DIR")"
+  destination_parent_real="$(resolve_path "$destination_parent")"
+  if [[ "$destination_name" == "." || "$destination_name" == ".." ]] || \
+    ! path_is_within "$destination_parent_real" "$custom_nodes_root_real"; then
+    log "MOBILE_CUSTOM_NODE_DIR must stay under COMFYUI_DIR/custom_nodes: $MOBILE_CUSTOM_NODE_DIR"
+    exit 1
+  fi
+
+  local source_lexical destination_lexical
+  source_lexical="$(resolve_path "$(dirname -- "$MOBILE_FRONTEND_SRC")")/$(basename -- "$MOBILE_FRONTEND_SRC")"
+  destination_lexical="${destination_parent_real}/${destination_name}"
+  [[ "$source_lexical" != "$destination_lexical" ]] || {
+    log "MOBILE_FRONTEND_SRC and MOBILE_CUSTOM_NODE_DIR must not be the same path: $MOBILE_CUSTOM_NODE_DIR"
+    exit 1
+  }
+}
+
+verify_mobile_frontend_install() {
+  [[ -d "$MOBILE_CUSTOM_NODE_DIR" && ! -L "$MOBILE_CUSTOM_NODE_DIR" ]] || {
+    log "mobile frontend custom node is not a regular directory: $MOBILE_CUSTOM_NODE_DIR"
+    exit 1
+  }
+  [[ -f "$MOBILE_CUSTOM_NODE_DIR/__init__.py" ]] || {
+    log "installed mobile frontend __init__.py is missing: $MOBILE_CUSTOM_NODE_DIR/__init__.py"
+    exit 1
+  }
+  [[ -f "$MOBILE_CUSTOM_NODE_DIR/dist/index.html" ]] || {
+    log "installed mobile frontend dist/index.html is missing: $MOBILE_CUSTOM_NODE_DIR/dist/index.html"
+    exit 1
+  }
+}
+
+sync_mobile_frontend() {
+  local source_dir="$1"
+  local destination_dir="$2"
+  mkdir -p "$destination_dir"
+
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --delete \
+      --exclude='.git/' \
+      --exclude='node_modules/' \
+      "$source_dir/" \
+      "$destination_dir/"
+    return 0
+  fi
+
+  log "rsync is not available; copying mobile frontend files without deleting excluded paths"
+  local entry
+  while IFS= read -r -d '' entry; do
+    cp -a -- "$entry" "$destination_dir/"
+  done < <(find "$source_dir" -mindepth 1 -maxdepth 1 \
+    ! -name '.git' ! -name 'node_modules' -print0)
+}
+
+install_mobile_frontend() {
   [[ -d "$MOBILE_FRONTEND_SRC" ]] || {
     log "mobile frontend source is missing: $MOBILE_FRONTEND_SRC"
     exit 1
   }
+  [[ -f "$MOBILE_FRONTEND_SRC/__init__.py" ]] || {
+    log "mobile frontend __init__.py is missing: $MOBILE_FRONTEND_SRC/__init__.py"
+    exit 1
+  }
   [[ -f "$MOBILE_FRONTEND_SRC/dist/index.html" ]] || {
-    log "mobile frontend dist/index.html is missing"
+    log "mobile frontend dist/index.html is missing: $MOBILE_FRONTEND_SRC/dist/index.html"
+    exit 1
+  }
+  validate_mobile_frontend_destination
+
+  if [[ -L "$MOBILE_CUSTOM_NODE_DIR" ]]; then
+    rm -f -- "$MOBILE_CUSTOM_NODE_DIR"
+    log "removed existing mobile frontend symlink: $MOBILE_CUSTOM_NODE_DIR"
+  elif [[ -e "$MOBILE_CUSTOM_NODE_DIR" && ! -d "$MOBILE_CUSTOM_NODE_DIR" ]]; then
+    log "mobile frontend destination exists but is not a directory: $MOBILE_CUSTOM_NODE_DIR"
+    exit 1
+  fi
+
+  local source_real destination_real
+  source_real="$(resolve_path "$MOBILE_FRONTEND_SRC")"
+  destination_real="$(resolve_path "$MOBILE_CUSTOM_NODE_DIR")"
+  [[ "$source_real" != "$destination_real" ]] || {
+    log "MOBILE_FRONTEND_SRC and MOBILE_CUSTOM_NODE_DIR must not resolve to the same path: $MOBILE_CUSTOM_NODE_DIR"
     exit 1
   }
 
-  mkdir -p "$(dirname "$MOBILE_CUSTOM_NODE_DIR")"
-  local source_real
-  source_real="$(readlink -f "$MOBILE_FRONTEND_SRC")"
-
-  if [[ -L "$MOBILE_CUSTOM_NODE_DIR" ]]; then
-    local current_real
-    current_real="$(readlink -f "$MOBILE_CUSTOM_NODE_DIR" 2>/dev/null || true)"
-    if [[ "$current_real" == "$source_real" ]]; then return 0; fi
-    rm -f "$MOBILE_CUSTOM_NODE_DIR"
-  elif [[ -e "$MOBILE_CUSTOM_NODE_DIR" ]]; then
-    local backup_dir
-    backup_dir="$(mktemp -d "${MOBILE_CUSTOM_NODE_DIR}.backup.XXXXXX")"
-    mv "$MOBILE_CUSTOM_NODE_DIR" "$backup_dir/previous"
-    log "moved existing frontend aside to $backup_dir/previous"
-  fi
-
-  ln -s "$MOBILE_FRONTEND_SRC" "$MOBILE_CUSTOM_NODE_DIR"
-  log "linked $MOBILE_CUSTOM_NODE_DIR -> $MOBILE_FRONTEND_SRC"
+  sync_mobile_frontend "$MOBILE_FRONTEND_SRC" "$MOBILE_CUSTOM_NODE_DIR"
+  verify_mobile_frontend_install
+  log "installed mobile frontend custom node: $MOBILE_CUSTOM_NODE_DIR"
 }
 
 register_canonical_workflow() {
@@ -650,26 +922,39 @@ start_output_sync() {
   log "output sync worker started with pid $!"
 }
 
-validate_runpod_storage_layout
-ensure_local_ephemeral_dirs
-install_rclone_if_missing
-configure_rclone
-prepare_comfyui
-resolve_comfyui_python
-mkdir -p "$COMFYUI_DIR/custom_nodes" "$NETWORK_CHECKPOINT_DIR" \
-  "$LORA_DIR" "$UPSCALE_MODEL_DIR" "$DETAILER_DIR"
-link_mobile_frontend
-register_canonical_workflow
-sync_gdrive_checkpoints
-migrate_storage_directory "$COMFYUI_DIR/output" "$LOCAL_OUTPUT_DIR" output
-migrate_storage_directory "$COMFYUI_DIR/temp" "$LOCAL_TEMP_DIR" temp
-copy_gdrive_local_models
-log_storage_layout
-install_impact_pack
-start_output_sync
+bootstrap_main() {
+  validate_runpod_storage_layout
+  ensure_local_ephemeral_dirs
+  install_rclone_if_missing
+  configure_rclone
+  prepare_comfyui
+  ensure_comfyui_runtime_venv
+  resolve_comfyui_python
+  ensure_comfyui_manager
+  configure_comfyui_manager_args
+  mkdir -p "$COMFYUI_DIR/custom_nodes" "$NETWORK_CHECKPOINT_DIR" \
+    "$LORA_DIR" "$UPSCALE_MODEL_DIR" "$DETAILER_DIR"
+  install_mobile_frontend
+  register_canonical_workflow
+  sync_gdrive_checkpoints
+  migrate_storage_directory "$COMFYUI_DIR/output" "$LOCAL_OUTPUT_DIR" output
+  migrate_storage_directory "$COMFYUI_DIR/temp" "$LOCAL_TEMP_DIR" temp
+  copy_gdrive_local_models
+  log_storage_layout
+  install_impact_pack
+  verify_mobile_frontend_install
+  verify_comfyui_manager_install
+  verify_required_custom_node_files
 
-if [[ ! -x "$START_SCRIPT" ]]; then
-  log "start script is not executable: $START_SCRIPT"
-  exit 1
+  if [[ ! -x "$START_SCRIPT" ]]; then
+    log "start script is not executable: $START_SCRIPT"
+    exit 1
+  fi
+  start_output_sync
+  start_post_start_health_check
+  exec "$START_SCRIPT"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  bootstrap_main "$@"
 fi
-exec "$START_SCRIPT"

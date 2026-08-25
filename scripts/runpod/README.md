@@ -139,8 +139,10 @@ GDrive images back to the Pod and preserves subdirectories such as
 
 ## ComfyUI Python and custom nodes
 
-Impact Pack and Impact Subpack requirements are installed with the first
-available Python in this order:
+When `${COMFYUI_DIR}/.venv-cu128` is missing, bootstrap creates it with
+`python3.12 -m venv --system-site-packages`. An existing usable venv is reused;
+it is not recreated. Impact Pack, Impact Subpack, and ComfyUI Manager
+dependencies are installed with the ComfyUI runtime Python in this order:
 
 1. `${COMFYUI_DIR}/.venv-cu128/bin/python`
 2. `python3.12`
@@ -150,10 +152,36 @@ Impact Pack defaults to ref `Main` and Impact Subpack defaults to ref `main`.
 SAM2-related requirements are excluded by default; set
 `INSTALL_SAM2_DEPENDENCIES=true` only when needed.
 
-The existing Template clone is linked to
-`ComfyUI/custom_nodes/comfyui-mobile-frontend`. Bootstrap requires
-`dist/index.html` and safely moves an existing real directory aside before
-creating the symlink.
+The Git clone at `/workspace/comfyui-mobile-frontend-src` is synchronized into
+the real directory
+`/workspace/runpod-slim/ComfyUI/custom_nodes/comfyui-mobile-frontend` on every
+Pod start. The destination is never a symlink. `.git/` and `node_modules/`
+are excluded, while `__init__.py`, Python runtime files, and `dist/` are
+copied. An old destination symlink is removed without deleting its target;
+an existing regular file or an unsafe destination path stops bootstrap.
+
+### ComfyUI Manager
+
+With `ENABLE_COMFYUI_MANAGER=true` (the default), bootstrap installs the
+`comfyui-manager` package into `${COMFYUI_DIR}/.venv-cu128/bin/python` and
+also installs `${COMFYUI_DIR}/manager_requirements.txt` when that file exists.
+It adds `--enable-manager` exactly once to
+`/workspace/runpod-slim/comfyui_args.txt` while preserving all other
+arguments. The package and argument file are verified before ComfyUI starts.
+An older `ComfyUI/custom_nodes/ComfyUI-Manager` directory, if present, is
+left untouched.
+
+The canonical workflow uses two external node types:
+
+- `FaceDetailer` — provided by `ComfyUI-Impact-Pack`.
+- `UltralyticsDetectorProvider` — provided by `ComfyUI-Impact-Subpack`.
+
+Both packs are cloned when missing and their requirements are installed with
+the same ComfyUI runtime Python. The detailer model
+`bbox/face_yolov8m.pt` is copied from `gdrive:sdxl_detailer` when available;
+if it is absent, bootstrap logs the missing model and does not substitute an
+external model. A best-effort post-start health check polls `/object_info`,
+`/mobile/`, and the workflow userdata API for up to 120 seconds.
 
 ## Environment variables
 
@@ -187,9 +215,16 @@ Other controls:
 - `MOBILE_FRONTEND_REF`
 - `BAKED_COMFYUI_DIR` (default: `/opt/comfyui-baked`)
 - `MOBILE_FRONTEND_SRC`
+- `MOBILE_CUSTOM_NODE_DIR` (default: `${COMFYUI_DIR}/custom_nodes/comfyui-mobile-frontend`)
 - `CANONICAL_WORKFLOW_SRC` (default: `${MOBILE_FRONTEND_SRC}/src/workflows/mobile_sdxl_default.json`)
 - `COMFYUI_WORKFLOW_DIR` (default: `${COMFYUI_DIR}/user/default/workflows`)
 - `COMFYUI_CANONICAL_WORKFLOW` (default: `${COMFYUI_WORKFLOW_DIR}/mobile_sdxl_default.json`)
+- `COMFYUI_ARGS_FILE` (default: `${RUNPOD_SLIM_DIR}/comfyui_args.txt`)
+- `ENABLE_COMFYUI_MANAGER` (default: `true`)
+- `COMFYUI_MANAGER_PACKAGE` (default: `comfyui-manager`)
+- `ENABLE_STARTUP_HEALTH_CHECK` (default: `true`)
+- `STARTUP_HEALTH_CHECK_TIMEOUT_SECONDS` (default: `120`)
+- `HEALTH_CHECK_LOG` (default: `/tmp/comfyui-mobile-health-check.log`)
 - `START_SCRIPT` (default: `/start.sh`)
 - `IMPACT_PACK_REF` (default: `Main`)
 - `IMPACT_SUBPACK_REF` (default: `main`)
