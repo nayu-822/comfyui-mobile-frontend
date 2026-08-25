@@ -34,6 +34,29 @@ Container Disk: /runpod-local
 it and never replaces it with a symlink; this preserves compatibility with
 RunPod's official `/start.sh`.
 
+## Canonical workflow
+
+The Git-managed workflow is the source of truth:
+
+~~~text
+Git source of truth:
+/workspace/comfyui-mobile-frontend-src/src/workflows/mobile_sdxl_default.json
+
+ComfyUI registered copy:
+/workspace/runpod-slim/ComfyUI/user/default/workflows/mobile_sdxl_default.json
+~~~
+
+At Pod startup, the Git-managed copy is atomically copied into ComfyUI's
+workflow directory, so `mobile_sdxl_default` is available directly from the
+ComfyUI Workflow list. The registered file is a regular file, not a symlink.
+Only `mobile_sdxl_default.json` is replaced; other user workflows are neither
+changed nor deleted.
+
+Editing and saving the registered copy in ComfyUI does not permanently change
+the canonical workflow. It is overwritten by the Git version at the next Pod
+startup. To make a permanent change, edit
+`src/workflows/mobile_sdxl_default.json` and commit it to Git.
+
 ## RunPod Template bootstrap
 
 ~~~bash
@@ -164,6 +187,9 @@ Other controls:
 - `MOBILE_FRONTEND_REF`
 - `BAKED_COMFYUI_DIR` (default: `/opt/comfyui-baked`)
 - `MOBILE_FRONTEND_SRC`
+- `CANONICAL_WORKFLOW_SRC` (default: `${MOBILE_FRONTEND_SRC}/src/workflows/mobile_sdxl_default.json`)
+- `COMFYUI_WORKFLOW_DIR` (default: `${COMFYUI_DIR}/user/default/workflows`)
+- `COMFYUI_CANONICAL_WORKFLOW` (default: `${COMFYUI_WORKFLOW_DIR}/mobile_sdxl_default.json`)
 - `START_SCRIPT` (default: `/start.sh`)
 - `IMPACT_PACK_REF` (default: `Main`)
 - `IMPACT_SUBPACK_REF` (default: `main`)

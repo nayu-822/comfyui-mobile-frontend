@@ -8,6 +8,9 @@ BAKED_COMFYUI_DIR="${BAKED_COMFYUI_DIR:-/opt/comfyui-baked}"
 
 MOBILE_FRONTEND_SRC="${MOBILE_FRONTEND_SRC:-${WORKSPACE_DIR}/comfyui-mobile-frontend-src}"
 MOBILE_CUSTOM_NODE_DIR="${MOBILE_CUSTOM_NODE_DIR:-${COMFYUI_DIR}/custom_nodes/comfyui-mobile-frontend}"
+CANONICAL_WORKFLOW_SRC="${CANONICAL_WORKFLOW_SRC:-${MOBILE_FRONTEND_SRC}/src/workflows/mobile_sdxl_default.json}"
+COMFYUI_WORKFLOW_DIR="${COMFYUI_WORKFLOW_DIR:-${COMFYUI_DIR}/user/default/workflows}"
+COMFYUI_CANONICAL_WORKFLOW="${COMFYUI_CANONICAL_WORKFLOW:-${COMFYUI_WORKFLOW_DIR}/mobile_sdxl_default.json}"
 
 RCLONE_REMOTE_NAME="${RCLONE_REMOTE_NAME:-gdrive}"
 RCLONE_CONFIG="${RCLONE_CONFIG:-${RCLONE_CONFIG_PATH:-/tmp/rclone.conf}}"
@@ -598,6 +601,29 @@ link_mobile_frontend() {
   log "linked $MOBILE_CUSTOM_NODE_DIR -> $MOBILE_FRONTEND_SRC"
 }
 
+register_canonical_workflow() {
+  [[ -f "$CANONICAL_WORKFLOW_SRC" ]] || {
+    log "canonical workflow is missing: $CANONICAL_WORKFLOW_SRC"
+    exit 1
+  }
+
+  mkdir -p "$COMFYUI_WORKFLOW_DIR"
+  [[ ! -d "$COMFYUI_CANONICAL_WORKFLOW" ]] || {
+    log "canonical workflow destination is a directory: $COMFYUI_CANONICAL_WORKFLOW"
+    exit 1
+  }
+
+  local temp_path="${COMFYUI_CANONICAL_WORKFLOW}.tmp.$$"
+  rm -f -- "$temp_path"
+  cp -- "$CANONICAL_WORKFLOW_SRC" "$temp_path"
+  mv -f -- "$temp_path" "$COMFYUI_CANONICAL_WORKFLOW"
+  [[ -f "$COMFYUI_CANONICAL_WORKFLOW" && ! -L "$COMFYUI_CANONICAL_WORKFLOW" ]] || {
+    log "canonical workflow destination is not a regular file: $COMFYUI_CANONICAL_WORKFLOW"
+    exit 1
+  }
+  log "registered canonical workflow: $COMFYUI_CANONICAL_WORKFLOW"
+}
+
 start_output_sync() {
   if ! is_enabled "$ENABLE_OUTPUT_SYNC"; then
     log "output sync disabled"
@@ -633,6 +659,7 @@ resolve_comfyui_python
 mkdir -p "$COMFYUI_DIR/custom_nodes" "$NETWORK_CHECKPOINT_DIR" \
   "$LORA_DIR" "$UPSCALE_MODEL_DIR" "$DETAILER_DIR"
 link_mobile_frontend
+register_canonical_workflow
 sync_gdrive_checkpoints
 migrate_storage_directory "$COMFYUI_DIR/output" "$LOCAL_OUTPUT_DIR" output
 migrate_storage_directory "$COMFYUI_DIR/temp" "$LOCAL_TEMP_DIR" temp
