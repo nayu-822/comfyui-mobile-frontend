@@ -113,6 +113,27 @@ describe('generationFormValidation', () => {
     ]);
   });
 
+  it('ignores Hires method fields while Hires is disabled', () => {
+    const next = form();
+    next.checkpoint = 'real-checkpoint.safetensors';
+    next.hiresMode = 'unsupported' as GenerationFormState['hiresMode'];
+    next.resizeMethod = 'unsupported' as GenerationFormState['resizeMethod'];
+
+    expect(validateGenerationForm(next)).toEqual([]);
+  });
+
+  it('validates the selected Hires mode and resize method when enabled', () => {
+    const next = form();
+    next.checkpoint = 'real-checkpoint.safetensors';
+    next.hiresEnabled = true;
+    next.hiresMode = 'unsupported' as GenerationFormState['hiresMode'];
+    expect(validateGenerationForm(next)).toEqual(['Choose a Hires method.']);
+
+    next.hiresMode = 'resize';
+    next.resizeMethod = 'unsupported' as GenerationFormState['resizeMethod'];
+    expect(validateGenerationForm(next)).toEqual(['Choose a resize method.']);
+  });
+
   it('requires a real upscaler model when Upscaler is enabled', () => {
     const next = form();
     next.checkpoint = 'real-checkpoint.safetensors';

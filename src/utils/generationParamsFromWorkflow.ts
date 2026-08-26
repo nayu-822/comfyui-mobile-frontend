@@ -1,5 +1,12 @@
 import type { Workflow, WorkflowNode } from '@/api/types';
-import type { GenerationFormState, LoraSlot, LoraSlots } from '@/hooks/useGenerationForm';
+import {
+  HIRES_RESIZE_METHODS,
+  type GenerationFormState,
+  type HiresMode,
+  type HiresResizeMethod,
+  type LoraSlot,
+  type LoraSlots,
+} from '@/hooks/useGenerationForm';
 import {
   DEFAULT_MOBILE_NODE_NAMES,
   findMobileNode,
@@ -24,6 +31,20 @@ function numberValueOrUndefined(value: unknown): number | undefined {
 function stringValue(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   return value;
+}
+
+function hiresModeValue(value: unknown): HiresMode | undefined {
+  if (value === 'latent' || value === 'resize') return value;
+  if (value === true) return 'resize';
+  if (value === false) return 'latent';
+  return undefined;
+}
+
+function resizeMethodValue(value: unknown): HiresResizeMethod | undefined {
+  if (typeof value !== 'string') return undefined;
+  return HIRES_RESIZE_METHODS.includes(value as HiresResizeMethod)
+    ? value as HiresResizeMethod
+    : undefined;
 }
 
 function findByType(workflow: Workflow, types: string[], skip: WorkflowNode[] = []): WorkflowNode | undefined {
@@ -105,18 +126,51 @@ export function generationParamsFromWorkflow(workflow: Workflow): GenerationForm
 
   const hiresUpscale = findNamedOrType(workflow, nodeNames.hiresUpscale, ['LatentUpscaleBy']);
   const hiresSampler = findNamedOrType(workflow, nodeNames.hiresSampler, ['KSampler', 'KSamplerAdvanced'], hiresUpscale ? [hiresUpscale] : []);
-  if (hiresUpscale || hiresSampler) {
-    patch.hiresEnabled = (enabled(hiresUpscale) ?? true) && (enabled(hiresSampler) ?? true);
-    if (hiresUpscale) patch.hiresScale = numberValue(getGenerationWidgetValue(hiresUpscale, 1, 'scale_by'), 1.5);
-    if (hiresSampler) {
-      patch.hiresSteps = numberValue(getGenerationWidgetValue(hiresSampler, 2, 'steps'), 15);
-      patch.hiresCfg = numberValue(getGenerationWidgetValue(hiresSampler, 3, 'cfg'), 5);
-      patch.hiresDenoise = numberValue(getGenerationWidgetValue(hiresSampler, 6, 'denoise'), 0.35);
-      const sampler = stringValue(getGenerationWidgetValue(hiresSampler, 4, 'sampler_name'));
-      const scheduler = stringValue(getGenerationWidgetValue(hiresSampler, 5, 'scheduler'));
+  const hiresModeNode = findMobileNode(workflow, nodeNames.hiresMode);
+  const hiresResultSelect = findMobileNode(workflow, nodeNames.hiresResultSelect);
+  const resizeImage = findMobileNode(workflow, nodeNames.hiresResizeImage);
+  const resizeSampler = findMobileNode(workflow, nodeNames.hiresResizeSampler);
+  const restoredHiresMode = hiresModeValue(
+    getGenerationWidgetValue(hiresModeNode, 0, 'switch'),
+  );
+  const inferredHiresMode: HiresMode = restoredHiresMode
+    ?? ((resizeImage || resizeSampler) && enabled(resizeSampler) && !enabled(hiresSampler)
+      ? 'resize'
+      : 'latent');
+  if (restoredHiresMode !== undefined || resizeImage || resizeSampler) {
+    patch.hiresMode = inferredHiresMode;
+  }
+
+  const restoredHiresEnabled = getGenerationWidgetValue(hiresResultSelect, 0, 'switch');
+  if (typeof restoredHiresEnabled === 'boolean') {
+    patch.hiresEnabled = restoredHiresEnabled;
+  } else if (hiresUpscale || hiresSampler || resizeImage || resizeSampler) {
+    const activeSampler = inferredHiresMode === 'resize' ? resizeSampler : hiresSampler;
+    const activeScale = inferredHiresMode === 'resize' ? resizeImage : hiresUpscale;
+    patch.hiresEnabled = (enabled(activeScale) ?? true) && (enabled(activeSampler) ?? true);
+  }
+
+  const activeHiresSampler = inferredHiresMode === 'resize' ? resizeSampler : hiresSampler;
+  const activeScaleNode = inferredHiresMode === 'resize' ? resizeImage : hiresUpscale;
+  if (activeScaleNode || activeHiresSampler) {
+    if (activeScaleNode) {
+      patch.hiresScale = numberValue(getGenerationWidgetValue(activeScaleNode, 1, 'scale_by'), 1.5);
+    }
+    if (activeHiresSampler) {
+      patch.hiresSteps = numberValue(getGenerationWidgetValue(activeHiresSampler, 2, 'steps'), 15);
+      patch.hiresCfg = numberValue(getGenerationWidgetValue(activeHiresSampler, 3, 'cfg'), 5);
+      patch.hiresDenoise = numberValue(getGenerationWidgetValue(activeHiresSampler, 6, 'denoise'), 0.35);
+      const sampler = stringValue(getGenerationWidgetValue(activeHiresSampler, 4, 'sampler_name'));
+      const scheduler = stringValue(getGenerationWidgetValue(activeHiresSampler, 5, 'scheduler'));
       if (sampler !== undefined) patch.hiresSampler = sampler;
       if (scheduler !== undefined) patch.hiresScheduler = scheduler;
     }
+  }
+  if (resizeImage) {
+    const resizeMethod = resizeMethodValue(
+      getGenerationWidgetValue(resizeImage, 0, 'upscale_method'),
+    );
+    if (resizeMethod !== undefined) patch.resizeMethod = resizeMethod;
   }
 
   const detector = findNamedOrType(workflow, nodeNames.faceDetector, ['UltralyticsDetectorProvider']);

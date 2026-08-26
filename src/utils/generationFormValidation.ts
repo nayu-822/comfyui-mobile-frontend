@@ -1,4 +1,4 @@
-import type { GenerationFormState } from '@/hooks/useGenerationForm';
+import { HIRES_RESIZE_METHODS, type GenerationFormState } from '@/hooks/useGenerationForm';
 
 const PLACEHOLDER_MODEL_NAME = /^(?:PUT_[A-Z0-9_]+_HERE|PLACEHOLDER(?:_[A-Z0-9_]+)?|YOUR_[A-Z0-9_]+_HERE)(?:\.[A-Z0-9._-]+)?$/i;
 
@@ -50,10 +50,16 @@ export function validateGenerationForm(
   }
 
   if (form.hiresEnabled) {
+    if (form.hiresMode !== 'latent' && form.hiresMode !== 'resize') {
+      errors.push('Choose a Hires method.');
+    }
     if (!isFiniteAtLeast(form.hiresScale, 1)) errors.push('Hires scale must be at least 1.');
     if (!isFiniteAtLeast(form.hiresSteps, 1)) errors.push('Hires steps must be at least 1.');
     if (!isFiniteAtLeast(form.hiresCfg, 0)) errors.push('Hires CFG must be at least 0.');
     if (!isFiniteBetween(form.hiresDenoise, 0, 1)) errors.push('Hires denoise must be between 0 and 1.');
+    if (form.hiresMode === 'resize' && !HIRES_RESIZE_METHODS.includes(form.resizeMethod)) {
+      errors.push('Choose a resize method.');
+    }
   }
 
   if (form.faceDetailerEnabled) {

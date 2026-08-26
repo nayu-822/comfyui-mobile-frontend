@@ -9,6 +9,12 @@ export interface MobileNodeNames {
   baseSampler: string;
   hiresUpscale: string;
   hiresSampler: string;
+  hiresMode: string;
+  hiresResizeDecode: string;
+  hiresResizeImage: string;
+  hiresResizeEncode: string;
+  hiresResizeSampler: string;
+  hiresResultSelect: string;
   vaeDecode: string;
   faceDetector: string;
   faceDetailer: string;
@@ -36,6 +42,12 @@ export const DEFAULT_MOBILE_NODE_NAMES: MobileNodeNames = {
   baseSampler: 'MOBILE_BASE_SAMPLER',
   hiresUpscale: 'MOBILE_HIRES_UPSCALE',
   hiresSampler: 'MOBILE_HIRES_SAMPLER',
+  hiresMode: 'MOBILE_HIRES_MODE',
+  hiresResizeDecode: 'MOBILE_HIRES_RESIZE_DECODE',
+  hiresResizeImage: 'MOBILE_HIRES_RESIZE_IMAGE',
+  hiresResizeEncode: 'MOBILE_HIRES_RESIZE_ENCODE',
+  hiresResizeSampler: 'MOBILE_HIRES_RESIZE_SAMPLER',
+  hiresResultSelect: 'MOBILE_HIRES_RESULT_SELECT',
   vaeDecode: 'MOBILE_VAE_DECODE',
   faceDetector: 'MOBILE_FACE_DETECTOR',
   faceDetailer: 'MOBILE_FACE_DETAILER',
@@ -49,7 +61,16 @@ const DEFAULT_FEATURES: Record<string, MobileFeatureProfile> = {
   lora2: { nodes: [DEFAULT_MOBILE_NODE_NAMES.loraSlots[1]], defaultEnabled: false },
   lora3: { nodes: [DEFAULT_MOBILE_NODE_NAMES.loraSlots[2]], defaultEnabled: false },
   hires: {
-    nodes: [DEFAULT_MOBILE_NODE_NAMES.hiresUpscale, DEFAULT_MOBILE_NODE_NAMES.hiresSampler],
+    nodes: [
+      DEFAULT_MOBILE_NODE_NAMES.hiresUpscale,
+      DEFAULT_MOBILE_NODE_NAMES.hiresSampler,
+      DEFAULT_MOBILE_NODE_NAMES.hiresMode,
+      DEFAULT_MOBILE_NODE_NAMES.hiresResizeDecode,
+      DEFAULT_MOBILE_NODE_NAMES.hiresResizeImage,
+      DEFAULT_MOBILE_NODE_NAMES.hiresResizeEncode,
+      DEFAULT_MOBILE_NODE_NAMES.hiresResizeSampler,
+      DEFAULT_MOBILE_NODE_NAMES.hiresResultSelect,
+    ],
     defaultEnabled: false,
   },
   faceDetailer: { nodes: [DEFAULT_MOBILE_NODE_NAMES.faceDetailer], defaultEnabled: false },
@@ -93,6 +114,12 @@ export function getMobileGenerationProfile(workflow: Workflow): MobileGeneration
     baseSampler: stringOr(rawNames.baseSampler, DEFAULT_MOBILE_NODE_NAMES.baseSampler),
     hiresUpscale: stringOr(rawNames.hiresUpscale, DEFAULT_MOBILE_NODE_NAMES.hiresUpscale),
     hiresSampler: stringOr(rawNames.hiresSampler, DEFAULT_MOBILE_NODE_NAMES.hiresSampler),
+    hiresMode: stringOr(rawNames.hiresMode, DEFAULT_MOBILE_NODE_NAMES.hiresMode),
+    hiresResizeDecode: stringOr(rawNames.hiresResizeDecode, DEFAULT_MOBILE_NODE_NAMES.hiresResizeDecode),
+    hiresResizeImage: stringOr(rawNames.hiresResizeImage, DEFAULT_MOBILE_NODE_NAMES.hiresResizeImage),
+    hiresResizeEncode: stringOr(rawNames.hiresResizeEncode, DEFAULT_MOBILE_NODE_NAMES.hiresResizeEncode),
+    hiresResizeSampler: stringOr(rawNames.hiresResizeSampler, DEFAULT_MOBILE_NODE_NAMES.hiresResizeSampler),
+    hiresResultSelect: stringOr(rawNames.hiresResultSelect, DEFAULT_MOBILE_NODE_NAMES.hiresResultSelect),
     vaeDecode: stringOr(rawNames.vaeDecode, DEFAULT_MOBILE_NODE_NAMES.vaeDecode),
     faceDetector: stringOr(rawNames.faceDetector, DEFAULT_MOBILE_NODE_NAMES.faceDetector),
     faceDetailer: stringOr(rawNames.faceDetailer, DEFAULT_MOBILE_NODE_NAMES.faceDetailer),

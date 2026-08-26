@@ -1,6 +1,6 @@
 {
-  "last_node_id": 16,
-  "last_link_id": 29,
+  "last_node_id": 22,
+  "last_link_id": 42,
   "nodes": [
     {
       "id": 1,
@@ -39,7 +39,9 @@
           "type": "VAE",
           "links": [
             19,
-            23
+            23,
+            31,
+            34
           ],
           "slot_index": 2
         }
@@ -199,7 +201,8 @@
           "links": [
             9,
             14,
-            21
+            21,
+            35
           ],
           "slot_index": 0
         },
@@ -253,7 +256,8 @@
           "links": [
             10,
             15,
-            24
+            24,
+            36
           ],
           "slot_index": 0
         }
@@ -295,7 +299,8 @@
           "links": [
             11,
             16,
-            25
+            25,
+            37
           ],
           "slot_index": 0
         }
@@ -388,7 +393,9 @@
           "name": "LATENT",
           "type": "LATENT",
           "links": [
-            13
+            13,
+            30,
+            41
           ],
           "slot_index": 0
         }
@@ -513,6 +520,309 @@
       ]
     },
     {
+      "id": 17,
+      "type": "VAEDecode",
+      "pos": [
+        2240,
+        520
+      ],
+      "size": [
+        220,
+        80
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 30,
+          "slot_index": 0
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 31,
+          "slot_index": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            32
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "MOBILE_HIRES_RESIZE_DECODE",
+      "properties": {
+        "Node name for S&R": "MOBILE_HIRES_RESIZE_DECODE"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 18,
+      "type": "ImageScaleBy",
+      "pos": [
+        2580,
+        520
+      ],
+      "size": [
+        260,
+        100
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 32,
+          "slot_index": 0
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            33
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "MOBILE_HIRES_RESIZE_IMAGE",
+      "properties": {
+        "Node name for S&R": "MOBILE_HIRES_RESIZE_IMAGE"
+      },
+      "widgets_values": [
+        "lanczos",
+        1.5
+      ]
+    },
+    {
+      "id": 19,
+      "type": "VAEEncode",
+      "pos": [
+        2920,
+        520
+      ],
+      "size": [
+        220,
+        100
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": "pixels",
+          "type": "IMAGE",
+          "link": 33,
+          "slot_index": 0
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 34,
+          "slot_index": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            38
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "MOBILE_HIRES_RESIZE_ENCODE",
+      "properties": {
+        "Node name for S&R": "MOBILE_HIRES_RESIZE_ENCODE"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 20,
+      "type": "KSampler",
+      "pos": [
+        3260,
+        520
+      ],
+      "size": [
+        320,
+        280
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 35,
+          "slot_index": 0
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 36,
+          "slot_index": 1
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 37,
+          "slot_index": 2
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 38,
+          "slot_index": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            39
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "MOBILE_HIRES_RESIZE_SAMPLER",
+      "properties": {
+        "Node name for S&R": "MOBILE_HIRES_RESIZE_SAMPLER"
+      },
+      "widgets_values": [
+        123456789,
+        "fixed",
+        15,
+        5.0,
+        "euler_ancestral",
+        "normal",
+        0.35
+      ]
+    },
+    {
+      "id": 21,
+      "type": "ComfySwitchNode",
+      "pos": [
+        3640,
+        260
+      ],
+      "size": [
+        240,
+        120
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "on_false",
+          "type": "*",
+          "link": 18,
+          "slot_index": 0
+        },
+        {
+          "name": "on_true",
+          "type": "*",
+          "link": 39,
+          "slot_index": 1
+        },
+        {
+          "name": "switch",
+          "type": "BOOLEAN",
+          "link": null,
+          "slot_index": 2,
+          "widget": {
+            "name": "switch"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "*",
+          "links": [
+            40
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "MOBILE_HIRES_MODE",
+      "properties": {
+        "Node name for S&R": "MOBILE_HIRES_MODE"
+      },
+      "widgets_values": [
+        false
+      ]
+    },
+    {
+      "id": 22,
+      "type": "ComfySwitchNode",
+      "pos": [
+        4000,
+        260
+      ],
+      "size": [
+        240,
+        120
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "on_false",
+          "type": "*",
+          "link": 41,
+          "slot_index": 0
+        },
+        {
+          "name": "on_true",
+          "type": "*",
+          "link": 40,
+          "slot_index": 1
+        },
+        {
+          "name": "switch",
+          "type": "BOOLEAN",
+          "link": null,
+          "slot_index": 2,
+          "widget": {
+            "name": "switch"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "*",
+          "links": [
+            42
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "MOBILE_HIRES_RESULT_SELECT",
+      "properties": {
+        "Node name for S&R": "MOBILE_HIRES_RESULT_SELECT"
+      },
+      "widgets_values": [
+        false
+      ]
+    },
+    {
       "id": 11,
       "type": "VAEDecode",
       "pos": [
@@ -524,13 +834,13 @@
         80
       ],
       "flags": {},
-      "order": 10,
+      "order": 16,
       "mode": 0,
       "inputs": [
         {
           "name": "samples",
           "type": "LATENT",
-          "link": 18,
+          "link": 42,
           "slot_index": 0
         },
         {
@@ -568,7 +878,7 @@
         80
       ],
       "flags": {},
-      "order": 11,
+      "order": 17,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -609,7 +919,7 @@
         1180
       ],
       "flags": {},
-      "order": 12,
+      "order": 18,
       "mode": 4,
       "inputs": [
         {
@@ -777,7 +1087,7 @@
         80
       ],
       "flags": {},
-      "order": 13,
+      "order": 19,
       "mode": 4,
       "inputs": [],
       "outputs": [
@@ -811,7 +1121,7 @@
         100
       ],
       "flags": {},
-      "order": 14,
+      "order": 20,
       "mode": 4,
       "inputs": [
         {
@@ -856,7 +1166,7 @@
         440
       ],
       "flags": {},
-      "order": 15,
+      "order": 21,
       "mode": 0,
       "inputs": [
         {
@@ -1017,7 +1327,7 @@
       18,
       10,
       0,
-      11,
+      21,
       0,
       "LATENT"
     ],
@@ -1108,6 +1418,110 @@
       16,
       0,
       "IMAGE"
+    ],
+    [
+      30,
+      8,
+      0,
+      17,
+      0,
+      "LATENT"
+    ],
+    [
+      31,
+      1,
+      2,
+      17,
+      1,
+      "VAE"
+    ],
+    [
+      32,
+      17,
+      0,
+      18,
+      0,
+      "IMAGE"
+    ],
+    [
+      33,
+      18,
+      0,
+      19,
+      0,
+      "IMAGE"
+    ],
+    [
+      34,
+      1,
+      2,
+      19,
+      1,
+      "VAE"
+    ],
+    [
+      35,
+      4,
+      0,
+      20,
+      0,
+      "MODEL"
+    ],
+    [
+      36,
+      5,
+      0,
+      20,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      37,
+      6,
+      0,
+      20,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      38,
+      19,
+      0,
+      20,
+      3,
+      "LATENT"
+    ],
+    [
+      39,
+      20,
+      0,
+      21,
+      1,
+      "LATENT"
+    ],
+    [
+      40,
+      21,
+      0,
+      22,
+      1,
+      "LATENT"
+    ],
+    [
+      41,
+      8,
+      0,
+      22,
+      0,
+      "LATENT"
+    ],
+    [
+      42,
+      22,
+      0,
+      11,
+      0,
+      "LATENT"
     ]
   ],
   "groups": [],
@@ -1129,6 +1543,12 @@
         "baseSampler": "MOBILE_BASE_SAMPLER",
         "hiresUpscale": "MOBILE_HIRES_UPSCALE",
         "hiresSampler": "MOBILE_HIRES_SAMPLER",
+        "hiresMode": "MOBILE_HIRES_MODE",
+        "hiresResizeDecode": "MOBILE_HIRES_RESIZE_DECODE",
+        "hiresResizeImage": "MOBILE_HIRES_RESIZE_IMAGE",
+        "hiresResizeEncode": "MOBILE_HIRES_RESIZE_ENCODE",
+        "hiresResizeSampler": "MOBILE_HIRES_RESIZE_SAMPLER",
+        "hiresResultSelect": "MOBILE_HIRES_RESULT_SELECT",
         "vaeDecode": "MOBILE_VAE_DECODE",
         "faceDetector": "MOBILE_FACE_DETECTOR",
         "faceDetailer": "MOBILE_FACE_DETAILER",
@@ -1158,7 +1578,13 @@
         "hires": {
           "nodes": [
             "MOBILE_HIRES_UPSCALE",
-            "MOBILE_HIRES_SAMPLER"
+            "MOBILE_HIRES_SAMPLER",
+            "MOBILE_HIRES_MODE",
+            "MOBILE_HIRES_RESIZE_DECODE",
+            "MOBILE_HIRES_RESIZE_IMAGE",
+            "MOBILE_HIRES_RESIZE_ENCODE",
+            "MOBILE_HIRES_RESIZE_SAMPLER",
+            "MOBILE_HIRES_RESULT_SELECT"
           ],
           "defaultEnabled": false
         },

@@ -1,8 +1,18 @@
 import type { ReactNode } from 'react';
-import { useGenerationForm } from '@/hooks/useGenerationForm';
+import {
+  HIRES_RESIZE_METHODS,
+  useGenerationForm,
+  type HiresResizeMethod,
+} from '@/hooks/useGenerationForm';
 
 const inputClass = 'mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-2.5 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-50';
 const labelClass = 'text-xs font-medium text-slate-300';
+const resizeMethodLabels: Record<HiresResizeMethod, string> = {
+  'nearest-exact': 'Nearest',
+  bilinear: 'Bilinear',
+  bicubic: 'Bicubic',
+  lanczos: 'Lanczos',
+};
 
 function NumberSetting({
   label,
@@ -96,6 +106,20 @@ export function AdvancedSettings() {
       </Section>
 
       <Section title="Hires.fix" disabled={!form.hiresEnabled}>
+        {form.hiresEnabled && (
+          <label className="block">
+            <span className={labelClass}>Hires method</span>
+            <select
+              aria-label="Hires method"
+              className={inputClass}
+              value={form.hiresMode}
+              onChange={(event) => set('hiresMode', event.currentTarget.value as typeof form.hiresMode)}
+            >
+              <option value="latent">Latent</option>
+              <option value="resize">Resize</option>
+            </select>
+          </label>
+        )}
         <div className="grid grid-cols-2 gap-2">
           <NumberSetting label="Scale" value={form.hiresScale} min={1} step="0.05" onChange={(value) => set('hiresScale', value)} />
           <NumberSetting label="Steps" value={form.hiresSteps} min={1} onChange={(value) => set('hiresSteps', value)} />
@@ -106,6 +130,21 @@ export function AdvancedSettings() {
           <TextSetting label="Sampler" value={form.hiresSampler} onChange={(value) => set('hiresSampler', value)} />
           <TextSetting label="Scheduler" value={form.hiresScheduler} onChange={(value) => set('hiresScheduler', value)} />
         </div>
+        {form.hiresEnabled && form.hiresMode === 'resize' && (
+          <label className="block">
+            <span className={labelClass}>Resize method</span>
+            <select
+              aria-label="Resize method"
+              className={inputClass}
+              value={form.resizeMethod}
+              onChange={(event) => set('resizeMethod', event.currentTarget.value as HiresResizeMethod)}
+            >
+              {HIRES_RESIZE_METHODS.map((method) => (
+                <option key={method} value={method}>{resizeMethodLabels[method]}</option>
+              ))}
+            </select>
+          </label>
+        )}
       </Section>
 
       <Section title="FaceDetailer" disabled={!form.faceDetailerEnabled}>

@@ -9,6 +9,9 @@ export type LoraSlot = {
 
 export type LoraSlots = [LoraSlot, LoraSlot, LoraSlot];
 export type SeedMode = 'random' | 'fixed';
+export type HiresMode = 'latent' | 'resize';
+export const HIRES_RESIZE_METHODS = ['lanczos', 'bicubic', 'bilinear', 'nearest-exact'] as const;
+export type HiresResizeMethod = (typeof HIRES_RESIZE_METHODS)[number];
 
 export interface GenerationFormState {
   checkpoint: string;
@@ -26,6 +29,8 @@ export interface GenerationFormState {
   hiresEnabled: boolean;
   faceDetailerEnabled: boolean;
   upscaleEnabled: boolean;
+  hiresMode: HiresMode;
+  resizeMethod: HiresResizeMethod;
   hiresScale: number;
   hiresSteps: number;
   hiresCfg: number;
@@ -61,6 +66,8 @@ export const DEFAULT_GENERATION_FORM_STATE: GenerationFormState = {
   hiresEnabled: false,
   faceDetailerEnabled: false,
   upscaleEnabled: false,
+  hiresMode: 'latent',
+  resizeMethod: 'lanczos',
   hiresScale: 1.5,
   hiresSteps: 15,
   hiresCfg: 5,

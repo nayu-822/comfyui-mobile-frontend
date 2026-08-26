@@ -73,7 +73,8 @@ function setMode(workflow: Workflow, name: string, mode: 0 | 4): Workflow {
 
 /**
  * Apply the form to a cloned mobile workflow. Topology and links are deliberately
- * untouched: optional branches are selected only through ComfyUI bypass modes.
+ * untouched: optional branches are selected through ComfyUI bypass modes and
+ * the standard Hires result switches.
  */
 export function applyGenerationFormToWorkflow(
   form: GenerationFormState,
@@ -114,8 +115,10 @@ export function applyGenerationFormToWorkflow(
     });
   });
 
-  workflow = setMode(workflow, nodeNames.hiresUpscale, form.hiresEnabled ? 0 : 4);
-  workflow = setMode(workflow, nodeNames.hiresSampler, form.hiresEnabled ? 0 : 4);
+  const latentHiresEnabled = form.hiresEnabled && form.hiresMode === 'latent';
+  const resizeHiresEnabled = form.hiresEnabled && form.hiresMode === 'resize';
+  workflow = setMode(workflow, nodeNames.hiresUpscale, latentHiresEnabled ? 0 : 4);
+  workflow = setMode(workflow, nodeNames.hiresSampler, latentHiresEnabled ? 0 : 4);
   workflow = updateNamedNode(workflow, nodeNames.hiresUpscale, (node) =>
     setGenerationWidgetValue(node, 1, finiteNumber(form.hiresScale, 1.5), 'scale_by'));
   workflow = updateNamedNode(workflow, nodeNames.hiresSampler, (node) => {
@@ -126,6 +129,28 @@ export function applyGenerationFormToWorkflow(
     next = setGenerationWidgetValue(next, 5, form.hiresScheduler, 'scheduler');
     return setGenerationWidgetValue(next, 6, finiteNumber(form.hiresDenoise, 0.35), 'denoise');
   });
+  workflow = setMode(workflow, nodeNames.hiresResizeDecode, resizeHiresEnabled ? 0 : 4);
+  workflow = setMode(workflow, nodeNames.hiresResizeImage, resizeHiresEnabled ? 0 : 4);
+  workflow = setMode(workflow, nodeNames.hiresResizeEncode, resizeHiresEnabled ? 0 : 4);
+  workflow = setMode(workflow, nodeNames.hiresResizeSampler, resizeHiresEnabled ? 0 : 4);
+  workflow = updateNamedNode(workflow, nodeNames.hiresResizeImage, (node) => {
+    const next = setGenerationWidgetValue(node, 0, form.resizeMethod, 'upscale_method');
+    return setGenerationWidgetValue(next, 1, finiteNumber(form.hiresScale, 1.5), 'scale_by');
+  });
+  workflow = updateNamedNode(workflow, nodeNames.hiresResizeSampler, (node) => {
+    let next = setGenerationWidgetValue(node, 0, Math.round(finiteNumber(resolvedSeed, 0)), 'seed');
+    next = setGenerationWidgetValue(next, 2, Math.round(finiteNumber(form.hiresSteps, 15)), 'steps');
+    next = setGenerationWidgetValue(next, 3, finiteNumber(form.hiresCfg, 5), 'cfg');
+    next = setGenerationWidgetValue(next, 4, form.hiresSampler, 'sampler_name');
+    next = setGenerationWidgetValue(next, 5, form.hiresScheduler, 'scheduler');
+    return setGenerationWidgetValue(next, 6, finiteNumber(form.hiresDenoise, 0.35), 'denoise');
+  });
+  workflow = setMode(workflow, nodeNames.hiresMode, 0);
+  workflow = updateNamedNode(workflow, nodeNames.hiresMode, (node) =>
+    setGenerationWidgetValue(node, 0, form.hiresMode === 'resize', 'switch'));
+  workflow = setMode(workflow, nodeNames.hiresResultSelect, 0);
+  workflow = updateNamedNode(workflow, nodeNames.hiresResultSelect, (node) =>
+    setGenerationWidgetValue(node, 0, form.hiresEnabled, 'switch'));
 
   workflow = updateNamedNode(workflow, nodeNames.faceDetector, (node) =>
     setGenerationWidgetValue(node, 0, 'bbox/face_yolov8m.pt', 'model_name'));
