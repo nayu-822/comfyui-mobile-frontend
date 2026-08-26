@@ -38,6 +38,7 @@ describe('generationFormValidation', () => {
   it('rejects invalid base numeric settings', () => {
     const next = form();
     next.checkpoint = 'real-checkpoint.safetensors';
+    next.seedMode = 'fixed';
     next.width = 63;
     next.height = Number.NaN;
     next.steps = 0;
@@ -50,6 +51,33 @@ describe('generationFormValidation', () => {
       'Steps must be at least 1.',
       'CFG must be at least 0.',
       'Seed must be at least 0.',
+    ]);
+  });
+
+  it('requires an integer seed only in fixed mode', () => {
+    const next = form();
+    next.checkpoint = 'real-checkpoint.safetensors';
+    next.seedMode = 'fixed';
+    next.seed = 12.5;
+
+    expect(validateGenerationForm(next)).toEqual(['Seed must be an integer.']);
+  });
+
+  it('does not require a seed value in random mode', () => {
+    const next = form();
+    next.checkpoint = 'real-checkpoint.safetensors';
+    next.seedMode = 'random';
+    next.seed = Number.NaN;
+
+    expect(validateGenerationForm(next)).toEqual([]);
+  });
+
+  it('rejects a checkpoint that was restored but is not in the server list', () => {
+    const next = form();
+    next.checkpoint = 'missing.safetensors';
+
+    expect(validateGenerationForm(next, ['available.safetensors'])).toEqual([
+      'The selected checkpoint is not available in this ComfyUI instance.',
     ]);
   });
 

@@ -152,7 +152,7 @@ describe('applyGenerationFormToWorkflow', () => {
       cfg: 6.5,
       sampler: 'dpmpp_2m',
       scheduler: 'karras',
-    }, makeWorkflow());
+    }, makeWorkflow(), 42);
     const restored = generationParamsFromWorkflow(next);
 
     expect(restored.checkpoint).toBe('custom.safetensors');
@@ -165,7 +165,32 @@ describe('applyGenerationFormToWorkflow', () => {
     expect(restored.cfg).toBe(6.5);
     expect(restored.sampler).toBe('dpmpp_2m');
     expect(restored.scheduler).toBe('karras');
+    expect(restored.seedMode).toBe('fixed');
+    expect((find(next, 'MOBILE_BASE_SAMPLER').widgets_values as unknown[])[0]).toBe(42);
     expect((find(next, 'MOBILE_HIRES_SAMPLER').widgets_values as unknown[])[0]).toBe(42);
     expect((find(next, 'MOBILE_FACE_DETAILER').widgets_values as unknown[])[3]).toBe(42);
+  });
+
+  it('uses one explicitly resolved seed for base, Hires, and FaceDetailer', () => {
+    const next = applyGenerationFormToWorkflow({
+      ...form(),
+      seedMode: 'random',
+      seed: Number.NaN,
+    }, makeWorkflow(), 4294967295);
+
+    expect((find(next, 'MOBILE_BASE_SAMPLER').widgets_values as unknown[])[0]).toBe(4294967295);
+    expect((find(next, 'MOBILE_HIRES_SAMPLER').widgets_values as unknown[])[0]).toBe(4294967295);
+    expect((find(next, 'MOBILE_FACE_DETAILER').widgets_values as unknown[])[3]).toBe(4294967295);
+  });
+
+  it('leaves random mode unchanged when a workflow has no seed value', () => {
+    const source = makeWorkflow();
+    const baseSampler = find(source, 'MOBILE_BASE_SAMPLER');
+    baseSampler.widgets_values = undefined;
+
+    const restored = generationParamsFromWorkflow(source);
+
+    expect(restored.seed).toBeUndefined();
+    expect(restored.seedMode).toBeUndefined();
   });
 });

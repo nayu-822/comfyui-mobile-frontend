@@ -8,6 +8,7 @@ export type LoraSlot = {
 };
 
 export type LoraSlots = [LoraSlot, LoraSlot, LoraSlot];
+export type SeedMode = 'random' | 'fixed';
 
 export interface GenerationFormState {
   checkpoint: string;
@@ -15,6 +16,7 @@ export interface GenerationFormState {
   negativePrompt: string;
   width: number;
   height: number;
+  seedMode: SeedMode;
   seed: number;
   steps: number;
   cfg: number;
@@ -45,6 +47,7 @@ export const DEFAULT_GENERATION_FORM_STATE: GenerationFormState = {
   negativePrompt: 'lowres, worst quality, bad anatomy',
   width: 1024,
   height: 1536,
+  seedMode: 'random',
   seed: 123456789,
   steps: 28,
   cfg: 5,

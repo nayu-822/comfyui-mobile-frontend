@@ -1,8 +1,9 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import type { Workflow } from '@/api/types';
 import * as api from '@/api/client';
-import { useGenerationForm } from '@/hooks/useGenerationForm';
+import { DEFAULT_GENERATION_FORM_STATE, useGenerationForm } from '@/hooks/useGenerationForm';
+import { useCheckpoints } from '@/hooks/useCheckpoints';
 import { useWorkflowStore } from '@/hooks/useWorkflow';
 import defaultWorkflowAsset from '@/workflows/mobile_sdxl_default.json';
 import { useQueueStore } from '@/hooks/useQueue';
@@ -10,6 +11,7 @@ import { buildPromptFromWorkflow } from '@/utils/buildPromptFromWorkflow';
 import { applyGenerationFormToWorkflow } from '@/utils/applyGenerationFormToWorkflow';
 import { generationParamsFromWorkflow } from '@/utils/generationParamsFromWorkflow';
 import { validateGenerationForm } from '@/utils/generationFormValidation';
+import { resolveGenerationSeed } from '@/utils/generationSeed';
 import { extractWorkflowFromImageFile } from '@/utils/imageWorkflowMetadata';
 import { QUEUE_WORKFLOW_LABEL_EXTRA_DATA_KEY } from '@/utils/queueWorkflowLabel';
 import { BasicSettings } from './BasicSettings';
@@ -27,6 +29,12 @@ function cloneWorkflow(workflow: Workflow): Workflow {
 
 export function GenerationPanel({ visible }: { visible: boolean }) {
   const form = useGenerationForm();
+  const {
+    checkpoints,
+    status: checkpointsStatus,
+    error: checkpointError,
+    reload: reloadCheckpoints,
+  } = useCheckpoints();
   const nodeTypes = useWorkflowStore((state) => state.nodeTypes);
   const baseWorkflow = useMemo(() => {
     if (!isWorkflow(defaultWorkflowAsset)) return null;
@@ -35,8 +43,28 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
   const loadError = baseWorkflow ? null : 'The bundled mobile generation workflow is malformed.';
   const [status, setStatus] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [lastUsedSeed, setLastUsedSeed] = useState<number | null>(null);
   const restoreInputRef = useRef<HTMLInputElement>(null);
-  const validationErrors = validateGenerationForm(form);
+  const restoredCheckpointRef = useRef(false);
+  const checkpoint = form.checkpoint;
+  const setField = form.setField;
+  useEffect(() => {
+    if (
+      restoredCheckpointRef.current
+      || checkpointsStatus !== 'loaded'
+      || checkpoints.includes(checkpoint)
+    ) return;
+    // A restored but currently unavailable model must remain visible so the
+    // user can understand why it cannot be queued. Only replace the shipped
+    // placeholder or an empty new-form value with the first available model.
+    if (checkpoint && checkpoint !== DEFAULT_GENERATION_FORM_STATE.checkpoint) return;
+    setField('checkpoint', checkpoints[0] ?? '');
+  }, [checkpoints, checkpointsStatus, checkpoint, setField]);
+
+  const validationErrors = validateGenerationForm(
+    form,
+    checkpointsStatus === 'loaded' ? checkpoints : undefined,
+  );
 
   const handleGenerate = async () => {
     if (validationErrors.length > 0) {
@@ -55,7 +83,8 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
     setIsGenerating(true);
     setStatus(null);
     try {
-      const executionWorkflow = applyGenerationFormToWorkflow(form, baseWorkflow);
+      const resolvedSeed = resolveGenerationSeed(form);
+      const executionWorkflow = applyGenerationFormToWorkflow(form, baseWorkflow, resolvedSeed);
       const prompt = buildPromptFromWorkflow(executionWorkflow, nodeTypes);
       const request: api.PromptQueueRequest = {
         prompt,
@@ -77,7 +106,9 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
         workflowLabel: 'Simple generation',
         clientId: api.clientId,
       }).catch(() => {});
-      setStatus('Generation queued.');
+      form.patch({ seed: resolvedSeed });
+      setLastUsedSeed(resolvedSeed);
+      setStatus(`Generation queued. Seed: ${resolvedSeed}`);
     } catch (error: unknown) {
       setStatus(error instanceof Error ? error.message : 'Failed to queue generation.');
     } finally {
@@ -96,6 +127,7 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
         return;
       }
       const patch = generationParamsFromWorkflow(workflow);
+      if (patch.checkpoint !== undefined) restoredCheckpointRef.current = true;
       form.patch(patch);
       setStatus('Generation parameters restored from the image.');
     } catch (error: unknown) {
@@ -129,14 +161,19 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
           </div>
         )}
 
-        <BasicSettings />
+        <BasicSettings
+          checkpoints={checkpoints}
+          checkpointsStatus={checkpointsStatus}
+          checkpointError={checkpointError}
+          onReloadCheckpoints={reloadCheckpoints}
+        />
         <FeatureToggles />
 
         <div className="flex flex-col gap-2">
           <button
             type="button"
             onClick={() => void handleGenerate()}
-            disabled={!baseWorkflow || !nodeTypes || isGenerating || validationErrors.length > 0}
+            disabled={!baseWorkflow || !nodeTypes || checkpointsStatus !== 'loaded' || isGenerating || validationErrors.length > 0}
             className="min-h-14 w-full rounded-xl bg-cyan-400 px-4 py-3 text-lg font-bold text-slate-950 transition-colors hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isGenerating ? 'Queueing…' : 'Generate'}
@@ -156,6 +193,11 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
             onChange={handleRestoreImage}
           />
           {status && <p role="status" className="text-center text-xs text-slate-400">{status}</p>}
+          {lastUsedSeed !== null && (
+            <p className="text-center text-xs text-slate-400">
+              Last used seed: <code className="text-slate-200">{lastUsedSeed}</code>
+            </p>
+          )}
         </div>
 
         <AdvancedSettings />

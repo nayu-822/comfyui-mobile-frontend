@@ -19,11 +19,19 @@ function isFiniteBetween(value: number, minimum: number, maximum: number): boole
 }
 
 /** Return user-facing errors that must be fixed before a simple generation can be queued. */
-export function validateGenerationForm(form: GenerationFormState): string[] {
+export function validateGenerationForm(
+  form: GenerationFormState,
+  availableCheckpoints?: readonly string[],
+): string[] {
   const errors: string[] = [];
 
   if (isEmptyOrPlaceholderModelName(form.checkpoint)) {
     errors.push('Choose a checkpoint before generating.');
+  } else if (
+    availableCheckpoints !== undefined
+    && !availableCheckpoints.includes(form.checkpoint)
+  ) {
+    errors.push('The selected checkpoint is not available in this ComfyUI instance.');
   }
 
   form.loras.forEach((lora, index) => {
@@ -36,7 +44,10 @@ export function validateGenerationForm(form: GenerationFormState): string[] {
   if (!isFiniteAtLeast(form.height, 64)) errors.push('Height must be at least 64.');
   if (!isFiniteAtLeast(form.steps, 1)) errors.push('Steps must be at least 1.');
   if (!isFiniteAtLeast(form.cfg, 0)) errors.push('CFG must be at least 0.');
-  if (!isFiniteAtLeast(form.seed, 0)) errors.push('Seed must be at least 0.');
+  if (form.seedMode === 'fixed') {
+    if (!Number.isSafeInteger(form.seed)) errors.push('Seed must be an integer.');
+    else if (form.seed < 0) errors.push('Seed must be at least 0.');
+  }
 
   if (form.hiresEnabled) {
     if (!isFiniteAtLeast(form.hiresScale, 1)) errors.push('Hires scale must be at least 1.');

@@ -15,6 +15,12 @@ function numberValue(value: unknown, fallback: number): number {
   const number = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(number) ? number : fallback;
 }
+function numberValueOrUndefined(value: unknown): number | undefined {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (typeof value !== 'string' || value.trim() === '') return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
 function stringValue(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   return value;
@@ -69,7 +75,11 @@ export function generationParamsFromWorkflow(workflow: Workflow): GenerationForm
     patch.height = numberValue(getGenerationWidgetValue(size, 1, 'height'), 1536);
   }
   if (baseSampler) {
-    patch.seed = numberValue(getGenerationWidgetValue(baseSampler, 0, 'seed'), 0);
+    const restoredSeed = numberValueOrUndefined(getGenerationWidgetValue(baseSampler, 0, 'seed'));
+    if (restoredSeed !== undefined) {
+      patch.seed = restoredSeed;
+      patch.seedMode = 'fixed';
+    }
     patch.steps = numberValue(getGenerationWidgetValue(baseSampler, 2, 'steps'), 28);
     patch.cfg = numberValue(getGenerationWidgetValue(baseSampler, 3, 'cfg'), 5);
     const sampler = stringValue(getGenerationWidgetValue(baseSampler, 4, 'sampler_name'));

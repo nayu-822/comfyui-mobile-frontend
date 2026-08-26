@@ -41,6 +41,7 @@ _mobile_progress_ws = _import_module('mobile_progress_ws')
 _mobile_latent_shape = _import_module('mobile_latent_shape')
 _mobile_push_prefs = _import_module('mobile_push_prefs')
 _mobile_capabilities = _import_module('mobile_capabilities')
+_mobile_checkpoints = _import_module('mobile_checkpoints')
 # General per-server frontend preferences (e.g. autocomplete opt-in).
 _mobile_app_prefs = _import_module('mobile_app_prefs')
 list_files = _file_utils.list_files
@@ -1479,6 +1480,18 @@ def setup_mobile_route():
         # Always available — we're built into the mobile frontend.
         return web.json_response({"status": "ok", "standalone": True})
 
+    async def api_checkpoints(request):
+        """List checkpoints as recognized by ComfyUI's folder registry."""
+        try:
+            loop = asyncio.get_running_loop()
+            items = await loop.run_in_executor(None, _mobile_checkpoints.list_checkpoints)
+            return web.json_response({"items": items})
+        except Exception as e:
+            return web.json_response(
+                {"error": f"Failed to list checkpoints: {e}"},
+                status=500,
+            )
+
     async def api_models_list(request):
         try:
             prefix = request.match_info.get('prefix', '')
@@ -1804,6 +1817,7 @@ def setup_mobile_route():
     mobile_app.router.add_delete('/api/workflows/folder', api_delete_workflow_folder)
     mobile_app.router.add_post('/api/files/copy-to-input', api_copy_file_to_input)
     mobile_app.router.add_post('/api/restart', api_restart_server)
+    mobile_app.router.add_get('/api/checkpoints', api_checkpoints)
     mobile_app.router.add_get('/api/models/health-check', api_models_health)
     mobile_app.router.add_get('/api/models/previews', api_models_preview)
     mobile_app.router.add_get('/api/models/{prefix}/list', api_models_list)
