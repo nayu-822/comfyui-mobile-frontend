@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useGenerationForm } from '@/hooks/useGenerationForm';
 import { BasicSettings } from '../BasicSettings';
 
@@ -9,6 +9,7 @@ const props = {
   checkpointsStatus: 'loaded' as const,
   checkpointError: null,
   onReloadCheckpoints: () => {},
+  onCheckpointChangedByUser: () => {},
 };
 
 describe('BasicSettings', () => {
@@ -57,5 +58,23 @@ describe('BasicSettings', () => {
     expect(Array.from(select?.options ?? []).some((option) =>
       option.textContent?.includes('Restored model (not detected): restored/missing.safetensors'))).toBe(true);
     expect(useGenerationForm.getState().checkpoint).toBe('restored/missing.safetensors');
+  });
+
+  it('notifies the parent when the user changes the checkpoint', async () => {
+    const onCheckpointChangedByUser = vi.fn();
+
+    await act(async () => root.render(
+      <BasicSettings {...props} onCheckpointChangedByUser={onCheckpointChangedByUser} />,
+    ));
+
+    const select = container.querySelector('select[aria-label="Checkpoint"]') as HTMLSelectElement | null;
+    await act(async () => {
+      if (!select) throw new Error('Checkpoint select was not rendered.');
+      select.value = 'models/b.safetensors';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    expect(onCheckpointChangedByUser).toHaveBeenCalledTimes(1);
+    expect(useGenerationForm.getState().checkpoint).toBe('models/b.safetensors');
   });
 });

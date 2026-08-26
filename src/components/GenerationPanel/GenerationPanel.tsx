@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import type { Workflow } from '@/api/types';
 import * as api from '@/api/client';
-import { DEFAULT_GENERATION_FORM_STATE, useGenerationForm } from '@/hooks/useGenerationForm';
+import { useGenerationForm } from '@/hooks/useGenerationForm';
 import { useCheckpoints } from '@/hooks/useCheckpoints';
 import { useWorkflowStore } from '@/hooks/useWorkflow';
 import defaultWorkflowAsset from '@/workflows/mobile_sdxl_default.json';
@@ -12,6 +12,7 @@ import { applyGenerationFormToWorkflow } from '@/utils/applyGenerationFormToWork
 import { generationParamsFromWorkflow } from '@/utils/generationParamsFromWorkflow';
 import { validateGenerationForm } from '@/utils/generationFormValidation';
 import { resolveGenerationSeed } from '@/utils/generationSeed';
+import { getCheckpointAutoSelection } from '@/utils/checkpointSelection';
 import { extractWorkflowFromImageFile } from '@/utils/imageWorkflowMetadata';
 import { QUEUE_WORKFLOW_LABEL_EXTRA_DATA_KEY } from '@/utils/queueWorkflowLabel';
 import { BasicSettings } from './BasicSettings';
@@ -25,6 +26,46 @@ function isWorkflow(value: unknown): value is Workflow {
 function cloneWorkflow(workflow: Workflow): Workflow {
   if (typeof structuredClone === 'function') return structuredClone(workflow);
   return JSON.parse(JSON.stringify(workflow)) as Workflow;
+}
+
+export interface GenerationSubmitBarProps {
+  disabled: boolean;
+  isGenerating: boolean;
+  onGenerate: () => void;
+  status: string | null;
+  lastUsedSeed: number | null;
+}
+
+export function GenerationSubmitBar({
+  disabled,
+  isGenerating,
+  onGenerate,
+  status,
+  lastUsedSeed,
+}: GenerationSubmitBarProps) {
+  return (
+    <div
+      data-testid="generation-submit-bar"
+      className="sticky bottom-0 z-30 -mx-3 border-t border-white/10 bg-slate-950/95 backdrop-blur"
+    >
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-2 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3">
+        <button
+          type="button"
+          onClick={onGenerate}
+          disabled={disabled}
+          className="min-h-14 w-full rounded-xl bg-cyan-400 px-4 py-3 text-lg font-bold text-slate-950 transition-colors hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isGenerating ? 'Queueing…' : 'Generate'}
+        </button>
+        {status && <p role="status" className="text-center text-xs text-slate-400">{status}</p>}
+        {lastUsedSeed !== null && (
+          <p className="text-center text-xs text-slate-400">
+            Last used seed: <code className="text-slate-200">{lastUsedSeed}</code>
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function GenerationPanel({ visible }: { visible: boolean }) {
@@ -45,26 +86,30 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [lastUsedSeed, setLastUsedSeed] = useState<number | null>(null);
   const restoreInputRef = useRef<HTMLInputElement>(null);
-  const restoredCheckpointRef = useRef(false);
+  const [restoredCheckpointValue, setRestoredCheckpointValue] = useState<string | null>(null);
   const checkpoint = form.checkpoint;
   const setField = form.setField;
   useEffect(() => {
-    if (
-      restoredCheckpointRef.current
-      || checkpointsStatus !== 'loaded'
-      || checkpoints.includes(checkpoint)
-    ) return;
-    // A restored but currently unavailable model must remain visible so the
-    // user can understand why it cannot be queued. Only replace the shipped
-    // placeholder or an empty new-form value with the first available model.
-    if (checkpoint && checkpoint !== DEFAULT_GENERATION_FORM_STATE.checkpoint) return;
-    setField('checkpoint', checkpoints[0] ?? '');
-  }, [checkpoints, checkpointsStatus, checkpoint, setField]);
+    if (checkpointsStatus !== 'loaded') return;
+    const nextCheckpoint = getCheckpointAutoSelection({
+      currentCheckpoint: checkpoint,
+      restoredCheckpointValue,
+      checkpoints,
+    });
+    if (nextCheckpoint === undefined) return;
+    setField('checkpoint', nextCheckpoint);
+  }, [checkpoint, checkpoints, checkpointsStatus, restoredCheckpointValue, setField]);
 
   const validationErrors = validateGenerationForm(
     form,
     checkpointsStatus === 'loaded' ? checkpoints : undefined,
   );
+  const generateDisabled =
+    !baseWorkflow
+    || !nodeTypes
+    || checkpointsStatus !== 'loaded'
+    || isGenerating
+    || validationErrors.length > 0;
 
   const handleGenerate = async () => {
     if (validationErrors.length > 0) {
@@ -127,7 +172,7 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
         return;
       }
       const patch = generationParamsFromWorkflow(workflow);
-      if (patch.checkpoint !== undefined) restoredCheckpointRef.current = true;
+      if (patch.checkpoint !== undefined) setRestoredCheckpointValue(patch.checkpoint);
       form.patch(patch);
       setStatus('Generation parameters restored from the image.');
     } catch (error: unknown) {
@@ -138,7 +183,7 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
   if (!visible) return null;
 
   return (
-    <div className="min-h-full bg-slate-950 px-3 pb-8 pt-4 text-slate-100">
+    <div className="min-h-full bg-slate-950 px-3 pb-32 pt-4 text-slate-100">
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
         <div className="rounded-xl border border-cyan-400/20 bg-cyan-950/20 px-3 py-3 text-sm text-slate-300">
           <div className="font-semibold text-cyan-200">Simple image generation</div>
@@ -166,18 +211,11 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
           checkpointsStatus={checkpointsStatus}
           checkpointError={checkpointError}
           onReloadCheckpoints={reloadCheckpoints}
+          onCheckpointChangedByUser={() => setRestoredCheckpointValue(null)}
         />
         <FeatureToggles />
 
         <div className="flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={() => void handleGenerate()}
-            disabled={!baseWorkflow || !nodeTypes || checkpointsStatus !== 'loaded' || isGenerating || validationErrors.length > 0}
-            className="min-h-14 w-full rounded-xl bg-cyan-400 px-4 py-3 text-lg font-bold text-slate-950 transition-colors hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isGenerating ? 'Queueing…' : 'Generate'}
-          </button>
           <button
             type="button"
             onClick={() => restoreInputRef.current?.click()}
@@ -192,16 +230,17 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
             className="hidden"
             onChange={handleRestoreImage}
           />
-          {status && <p role="status" className="text-center text-xs text-slate-400">{status}</p>}
-          {lastUsedSeed !== null && (
-            <p className="text-center text-xs text-slate-400">
-              Last used seed: <code className="text-slate-200">{lastUsedSeed}</code>
-            </p>
-          )}
         </div>
 
         <AdvancedSettings />
       </div>
+      <GenerationSubmitBar
+        disabled={generateDisabled}
+        isGenerating={isGenerating}
+        onGenerate={() => void handleGenerate()}
+        status={status}
+        lastUsedSeed={lastUsedSeed}
+      />
     </div>
   );
 }

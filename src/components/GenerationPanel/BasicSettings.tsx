@@ -12,6 +12,7 @@ export interface BasicSettingsProps {
   checkpointsStatus: CheckpointLoadStatus;
   checkpointError: string | null;
   onReloadCheckpoints: () => void;
+  onCheckpointChangedByUser: () => void;
 }
 
 function NumberField({
@@ -91,6 +92,7 @@ export function BasicSettings({
   checkpointsStatus,
   checkpointError,
   onReloadCheckpoints,
+  onCheckpointChangedByUser,
 }: BasicSettingsProps) {
   const form = useGenerationForm();
   const setField = form.setField;
@@ -112,7 +114,10 @@ export function BasicSettings({
         <select
           className={inputClass}
           value={form.checkpoint}
-          onChange={(event) => setField('checkpoint', event.currentTarget.value)}
+          onChange={(event) => {
+            onCheckpointChangedByUser();
+            setField('checkpoint', event.currentTarget.value);
+          }}
           disabled={checkpointsStatus !== 'loaded'}
           aria-label="Checkpoint"
         >
