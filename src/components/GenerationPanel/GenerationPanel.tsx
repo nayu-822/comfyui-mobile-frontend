@@ -33,7 +33,6 @@ export interface GenerationSubmitBarProps {
   isGenerating: boolean;
   onGenerate: () => void;
   status: string | null;
-  lastUsedSeed: number | null;
 }
 
 export function GenerationSubmitBar({
@@ -41,12 +40,11 @@ export function GenerationSubmitBar({
   isGenerating,
   onGenerate,
   status,
-  lastUsedSeed,
 }: GenerationSubmitBarProps) {
   return (
     <div
       data-testid="generation-submit-bar"
-      className="sticky bottom-0 z-30 -mx-3 border-t border-white/10 bg-slate-950/95 backdrop-blur"
+      className="fixed bottom-0 left-0 right-0 z-30 border-t border-white/10 bg-slate-950/95 backdrop-blur"
     >
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-2 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3">
         <button
@@ -58,11 +56,6 @@ export function GenerationSubmitBar({
           {isGenerating ? 'Queueing…' : 'Generate'}
         </button>
         {status && <p role="status" className="text-center text-xs text-slate-400">{status}</p>}
-        {lastUsedSeed !== null && (
-          <p className="text-center text-xs text-slate-400">
-            Last used seed: <code className="text-slate-200">{lastUsedSeed}</code>
-          </p>
-        )}
       </div>
     </div>
   );
@@ -84,7 +77,6 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
   const loadError = baseWorkflow ? null : 'The bundled mobile generation workflow is malformed.';
   const [status, setStatus] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [lastUsedSeed, setLastUsedSeed] = useState<number | null>(null);
   const restoreInputRef = useRef<HTMLInputElement>(null);
   const [restoredCheckpointValue, setRestoredCheckpointValue] = useState<string | null>(null);
   const checkpoint = form.checkpoint;
@@ -152,7 +144,6 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
         clientId: api.clientId,
       }).catch(() => {});
       form.patch({ seed: resolvedSeed });
-      setLastUsedSeed(resolvedSeed);
       setStatus(`Generation queued. Seed: ${resolvedSeed}`);
     } catch (error: unknown) {
       setStatus(error instanceof Error ? error.message : 'Failed to queue generation.');
@@ -183,7 +174,7 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
   if (!visible) return null;
 
   return (
-    <div className="min-h-full bg-slate-950 px-3 pb-32 pt-4 text-slate-100">
+    <div className="min-h-full bg-slate-950 px-3 pb-36 pt-4 text-slate-100">
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
         <div className="rounded-xl border border-cyan-400/20 bg-cyan-950/20 px-3 py-3 text-sm text-slate-300">
           <div className="font-semibold text-cyan-200">Simple image generation</div>
@@ -239,7 +230,6 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
         isGenerating={isGenerating}
         onGenerate={() => void handleGenerate()}
         status={status}
-        lastUsedSeed={lastUsedSeed}
       />
     </div>
   );
