@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useGenerationForm } from '@/hooks/useGenerationForm';
+import { useGenerationForm, type LoraSlots } from '@/hooks/useGenerationForm';
 import { BasicSettings } from '../BasicSettings';
 
 const props = {
@@ -10,6 +10,10 @@ const props = {
   checkpointError: null,
   onReloadCheckpoints: () => {},
   onCheckpointChangedByUser: () => {},
+  loras: ['models/style.safetensors', 'models/other.safetensors'],
+  lorasStatus: 'loaded' as const,
+  loraError: null,
+  onReloadLoras: () => {},
 };
 
 describe('BasicSettings', () => {
@@ -41,11 +45,52 @@ describe('BasicSettings', () => {
     ]);
     expect(seed?.disabled).toBe(true);
 
-    const fixed = container.querySelector('input[type="radio"][value="fixed"]') as HTMLInputElement | null;
-    await act(async () => fixed?.click());
+    const seedMode = container.querySelector('select[aria-label="Seed mode"]') as HTMLSelectElement | null;
+    await act(async () => {
+      if (!seedMode) throw new Error('Seed mode select was not rendered.');
+      seedMode.value = 'fixed';
+      seedMode.dispatchEvent(new Event('change', { bubbles: true }));
+    });
 
     expect(useGenerationForm.getState().seedMode).toBe('fixed');
     expect(seed?.disabled).toBe(false);
+  });
+
+  it('renders LoRA model selects and updates the selected model', async () => {
+    await act(async () => root.render(<BasicSettings {...props} />));
+
+    const select = container.querySelector('select[aria-label="LoRA 1 model"]') as HTMLSelectElement | null;
+    expect(select).not.toBeNull();
+    expect(Array.from(select?.options ?? []).map((option) => option.value)).toEqual([
+      'PUT_LORA_1_HERE.safetensors',
+      '',
+      'models/style.safetensors',
+      'models/other.safetensors',
+    ]);
+
+    await act(async () => {
+      if (!select) throw new Error('LoRA model select was not rendered.');
+      select.value = 'models/style.safetensors';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    expect(useGenerationForm.getState().loras[0].name).toBe('models/style.safetensors');
+  });
+
+  it('keeps a restored LoRA as a visible not-detected option', async () => {
+    useGenerationForm.getState().patch({
+      loras: [
+        { enabled: true, name: 'restored/missing.safetensors', strengthModel: 1, strengthClip: 1 },
+        ...useGenerationForm.getState().loras.slice(1),
+      ] as LoraSlots,
+    });
+
+    await act(async () => root.render(<BasicSettings {...props} />));
+
+    const select = container.querySelector('select[aria-label="LoRA 1 model"]') as HTMLSelectElement | null;
+    expect(select?.value).toBe('restored/missing.safetensors');
+    expect(Array.from(select?.options ?? []).some((option) =>
+      option.textContent?.includes('Restored model (not detected): restored/missing.safetensors'))).toBe(true);
   });
 
   it('keeps a restored checkpoint as a visible not-detected option', async () => {

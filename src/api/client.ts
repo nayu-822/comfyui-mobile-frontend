@@ -2,6 +2,7 @@
 export * from './client/base';
 export * from './client/models';
 export * from './client/checkpoints';
+export * from './client/loras';
 export * from './client/workflows';
 export * from './client/queue';
 export * from './client/assets';

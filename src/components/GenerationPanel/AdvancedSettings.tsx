@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import type { NodeTypes } from '@/api/types';
+import { getSamplerOptions, getSchedulerOptions } from '@/config/generationOptions';
 import {
   HIRES_RESIZE_METHODS,
   useGenerationForm,
@@ -62,6 +64,34 @@ function TextSetting({
   );
 }
 
+function SelectSetting({
+  label,
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+  ariaLabel?: string;
+}) {
+  return (
+    <label className="block">
+      <span className={labelClass}>{label}</span>
+      <select
+        aria-label={ariaLabel ?? label}
+        className={inputClass}
+        value={value}
+        onChange={(event) => onChange(event.currentTarget.value)}
+      >
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+    </label>
+  );
+}
+
 function Section({
   title,
   disabled = false,
@@ -84,9 +114,13 @@ function Section({
   );
 }
 
-export function AdvancedSettings() {
+export function AdvancedSettings({ nodeTypes = null }: { nodeTypes?: NodeTypes | null } = {}) {
   const form = useGenerationForm();
   const set = form.setField;
+  const samplerOptions = getSamplerOptions(nodeTypes, form.sampler);
+  const schedulerOptions = getSchedulerOptions(nodeTypes, form.scheduler);
+  const hiresSamplerOptions = getSamplerOptions(nodeTypes, form.hiresSampler);
+  const hiresSchedulerOptions = getSchedulerOptions(nodeTypes, form.hiresScheduler);
 
   return (
     <section className="space-y-2" aria-labelledby="advanced-generation-settings">
@@ -100,8 +134,20 @@ export function AdvancedSettings() {
           <NumberSetting label="CFG" value={form.cfg} min={0} step="0.1" onChange={(value) => set('cfg', value)} />
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <TextSetting label="Sampler" value={form.sampler} onChange={(value) => set('sampler', value)} />
-          <TextSetting label="Scheduler" value={form.scheduler} onChange={(value) => set('scheduler', value)} />
+          <SelectSetting
+            label="Base sampler"
+            ariaLabel="Base sampler"
+            value={form.sampler}
+            options={samplerOptions}
+            onChange={(value) => set('sampler', value)}
+          />
+          <SelectSetting
+            label="Base scheduler"
+            ariaLabel="Base scheduler"
+            value={form.scheduler}
+            options={schedulerOptions}
+            onChange={(value) => set('scheduler', value)}
+          />
         </div>
       </Section>
 
@@ -127,8 +173,20 @@ export function AdvancedSettings() {
           <NumberSetting label="Denoise" value={form.hiresDenoise} min={0} max={1} step="0.01" onChange={(value) => set('hiresDenoise', value)} />
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <TextSetting label="Sampler" value={form.hiresSampler} onChange={(value) => set('hiresSampler', value)} />
-          <TextSetting label="Scheduler" value={form.hiresScheduler} onChange={(value) => set('hiresScheduler', value)} />
+          <SelectSetting
+            label="Hires sampler"
+            ariaLabel="Hires sampler"
+            value={form.hiresSampler}
+            options={hiresSamplerOptions}
+            onChange={(value) => set('hiresSampler', value)}
+          />
+          <SelectSetting
+            label="Hires scheduler"
+            ariaLabel="Hires scheduler"
+            value={form.hiresScheduler}
+            options={hiresSchedulerOptions}
+            onChange={(value) => set('hiresScheduler', value)}
+          />
         </div>
         {form.hiresEnabled && form.hiresMode === 'resize' && (
           <label className="block">

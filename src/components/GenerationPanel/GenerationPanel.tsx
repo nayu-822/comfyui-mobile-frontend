@@ -4,6 +4,7 @@ import type { Workflow } from '@/api/types';
 import * as api from '@/api/client';
 import { useGenerationForm } from '@/hooks/useGenerationForm';
 import { useCheckpoints } from '@/hooks/useCheckpoints';
+import { useLoras } from '@/hooks/useLoras';
 import { useWorkflowStore } from '@/hooks/useWorkflow';
 import defaultWorkflowAsset from '@/workflows/mobile_sdxl_default.json';
 import { useQueueStore } from '@/hooks/useQueue';
@@ -69,6 +70,12 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
     error: checkpointError,
     reload: reloadCheckpoints,
   } = useCheckpoints();
+  const {
+    loras: loraModels,
+    status: lorasStatus,
+    error: loraError,
+    reload: reloadLoras,
+  } = useLoras();
   const nodeTypes = useWorkflowStore((state) => state.nodeTypes);
   const baseWorkflow = useMemo(() => {
     if (!isWorkflow(defaultWorkflowAsset)) return null;
@@ -203,6 +210,10 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
           checkpointError={checkpointError}
           onReloadCheckpoints={reloadCheckpoints}
           onCheckpointChangedByUser={() => setRestoredCheckpointValue(null)}
+          loras={loraModels}
+          lorasStatus={lorasStatus}
+          loraError={loraError}
+          onReloadLoras={reloadLoras}
         />
         <FeatureToggles />
 
@@ -223,7 +234,7 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
           />
         </div>
 
-        <AdvancedSettings />
+        <AdvancedSettings nodeTypes={nodeTypes} />
       </div>
       <GenerationSubmitBar
         disabled={generateDisabled}

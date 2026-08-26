@@ -44,4 +44,38 @@ describe('AdvancedSettings Hires controls', () => {
       'nearest-exact',
     ]);
   });
+
+  it('uses dropdowns for base and Hires sampler and scheduler settings', async () => {
+    await act(async () => root.render(<AdvancedSettings />));
+
+    const baseSampler = container.querySelector('select[aria-label="Base sampler"]') as HTMLSelectElement | null;
+    const baseScheduler = container.querySelector('select[aria-label="Base scheduler"]') as HTMLSelectElement | null;
+    const hiresSampler = container.querySelector('select[aria-label="Hires sampler"]') as HTMLSelectElement | null;
+    const hiresScheduler = container.querySelector('select[aria-label="Hires scheduler"]') as HTMLSelectElement | null;
+    expect(baseSampler?.value).toBe('euler_ancestral');
+    expect(baseScheduler?.value).toBe('normal');
+    expect(hiresSampler?.value).toBe('euler_ancestral');
+    expect(hiresScheduler?.value).toBe('normal');
+    expect(Array.from(baseSampler?.options ?? []).map((option) => option.value)).toContain('euler_ancestral');
+    expect(Array.from(baseScheduler?.options ?? []).map((option) => option.value)).toContain('karras');
+
+    await act(async () => {
+      if (!baseSampler || !baseScheduler || !hiresSampler || !hiresScheduler) {
+        throw new Error('Sampler and scheduler selects were not rendered.');
+      }
+      baseSampler.value = 'dpmpp_2m';
+      baseSampler.dispatchEvent(new Event('change', { bubbles: true }));
+      baseScheduler.value = 'karras';
+      baseScheduler.dispatchEvent(new Event('change', { bubbles: true }));
+      hiresSampler.value = 'euler';
+      hiresSampler.dispatchEvent(new Event('change', { bubbles: true }));
+      hiresScheduler.value = 'simple';
+      hiresScheduler.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    expect(useGenerationForm.getState().sampler).toBe('dpmpp_2m');
+    expect(useGenerationForm.getState().scheduler).toBe('karras');
+    expect(useGenerationForm.getState().hiresSampler).toBe('euler');
+    expect(useGenerationForm.getState().hiresScheduler).toBe('simple');
+  });
 });

@@ -1,10 +1,11 @@
 import type { ChangeEvent } from 'react';
 import { useGenerationForm, type GenerationFormState, type LoraSlot } from '@/hooks/useGenerationForm';
 import type { CheckpointLoadStatus } from '@/hooks/useCheckpoints';
+import type { LoraLoadStatus } from '@/hooks/useLoras';
 import { isEmptyOrPlaceholderModelName } from '@/utils/generationFormValidation';
 
-const inputClass = 'mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-400';
-const smallInputClass = 'mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-2.5 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400';
+const inputClass = 'mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-50';
+const smallInputClass = 'mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-2.5 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-50';
 const labelClass = 'text-xs font-medium text-slate-300';
 
 export interface BasicSettingsProps {
@@ -13,6 +14,10 @@ export interface BasicSettingsProps {
   checkpointError: string | null;
   onReloadCheckpoints: () => void;
   onCheckpointChangedByUser: () => void;
+  loras: string[];
+  lorasStatus: LoraLoadStatus;
+  loraError: string | null;
+  onReloadLoras: () => void;
 }
 
 function NumberField({
@@ -42,8 +47,24 @@ function NumberField({
     </label>
   );
 }
-function LoraCard({ index, slot }: { index: 0 | 1 | 2; slot: LoraSlot }) {
+function LoraCard({
+  index,
+  slot,
+  loras,
+  lorasStatus,
+  loraError,
+  onReloadLoras,
+}: {
+  index: 0 | 1 | 2;
+  slot: LoraSlot;
+  loras: string[];
+  lorasStatus: LoraLoadStatus;
+  loraError: string | null;
+  onReloadLoras: () => void;
+}) {
   const setLora = useGenerationForm((state) => state.setLora);
+  const currentLoraIsListed = loras.includes(slot.name);
+  const currentLoraIsUnlisted = Boolean(slot.name) && !currentLoraIsListed;
   const handleStrength = (event: ChangeEvent<HTMLInputElement>) => {
     const value = Number(event.currentTarget.value);
     setLora(index, { strengthModel: value, strengthClip: value });
@@ -65,12 +86,49 @@ function LoraCard({ index, slot }: { index: 0 | 1 | 2; slot: LoraSlot }) {
       </div>
       <label className="block">
         <span className={labelClass}>Model</span>
-        <input
+        <select
+          aria-label={`LoRA ${index + 1} model`}
           className={smallInputClass}
           value={slot.name}
+          aria-busy={lorasStatus === 'loading'}
+          disabled={lorasStatus === 'loading'}
           onChange={(event) => setLora(index, { name: event.currentTarget.value })}
-          placeholder="path/to/model.safetensors"
-        />
+        >
+          {lorasStatus === 'loading' && (
+            <option value={slot.name}>Loading LoRAs…</option>
+          )}
+          {lorasStatus === 'error' && (
+            <option value={slot.name}>{slot.name || 'LoRAs unavailable'}</option>
+          )}
+          {lorasStatus === 'loaded' && currentLoraIsUnlisted && (
+            <option value={slot.name}>
+              {isEmptyOrPlaceholderModelName(slot.name)
+                ? 'Choose a LoRA'
+                : `Restored model (not detected): ${slot.name}`}
+            </option>
+          )}
+          {lorasStatus === 'loaded' && (
+            <option value="">None{loras.length === 0 ? ' (no LoRAs found)' : ''}</option>
+          )}
+          {loras.map((lora) => (
+            <option key={lora} value={lora}>{lora}</option>
+          ))}
+        </select>
+        {lorasStatus === 'loading' && (
+          <p className="mt-1 text-xs text-slate-400">Loading LoRAs…</p>
+        )}
+        {lorasStatus === 'error' && (
+          <div role="alert" className="mt-2 flex items-center gap-2 text-xs text-red-200">
+            <span>{loraError || 'Failed to load LoRAs.'}</span>
+            <button
+              type="button"
+              onClick={onReloadLoras}
+              className="min-h-9 rounded-lg border border-red-300/30 px-2.5 font-semibold text-red-100 hover:bg-red-900/40"
+            >
+              Reload
+            </button>
+          </div>
+        )}
       </label>
       <label className="mt-2 block">
         <span className={labelClass}>Strength</span>
@@ -93,6 +151,10 @@ export function BasicSettings({
   checkpointError,
   onReloadCheckpoints,
   onCheckpointChangedByUser,
+  loras,
+  lorasStatus,
+  loraError,
+  onReloadLoras,
 }: BasicSettingsProps) {
   const form = useGenerationForm();
   const setField = form.setField;
@@ -188,24 +250,18 @@ export function BasicSettings({
 
       <fieldset className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
         <legend className={labelClass}>Seed</legend>
-        <div role="radiogroup" aria-label="Seed mode" className="mt-1 grid grid-cols-2 gap-2">
-          {(['random', 'fixed'] as const).map((mode) => (
-            <label
-              key={mode}
-              className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-slate-950/70 px-3 text-sm text-slate-200 has-[:checked]:border-cyan-400/70 has-[:checked]:bg-cyan-950/40"
-            >
-              <input
-                type="radio"
-                name="generation-seed-mode"
-                value={mode}
-                checked={form.seedMode === mode}
-                onChange={() => setField('seedMode', mode)}
-                className="h-4 w-4 accent-cyan-400"
-              />
-              {mode === 'random' ? 'Random' : 'Fixed'}
-            </label>
-          ))}
-        </div>
+        <label className="mt-1 block">
+          <span className={labelClass}>Mode</span>
+          <select
+            aria-label="Seed mode"
+            className={smallInputClass}
+            value={form.seedMode}
+            onChange={(event) => setField('seedMode', event.currentTarget.value as GenerationFormState['seedMode'])}
+          >
+            <option value="random">Random</option>
+            <option value="fixed">Fixed</option>
+          </select>
+        </label>
         <label className="mt-2 block">
           <span className={labelClass}>Seed value</span>
           <input
@@ -233,6 +289,10 @@ export function BasicSettings({
             key={index}
             index={index as 0 | 1 | 2}
             slot={slot}
+            loras={loras}
+            lorasStatus={lorasStatus}
+            loraError={loraError}
+            onReloadLoras={onReloadLoras}
           />
         ))}
       </div>
