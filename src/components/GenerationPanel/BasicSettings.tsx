@@ -160,6 +160,7 @@ export function BasicSettings({
   const setField = form.setField;
   const currentCheckpointIsListed = checkpoints.includes(form.checkpoint);
   const currentCheckpointIsUnlisted = Boolean(form.checkpoint) && !currentCheckpointIsListed;
+  const enabledLoraCount = form.loras.filter((slot) => slot.enabled).length;
 
   const updateNumber = <K extends keyof Omit<GenerationFormState, 'loras'>>(
     field: K,
@@ -283,19 +284,32 @@ export function BasicSettings({
         )}
       </fieldset>
 
-      <div className="space-y-2">
-        {form.loras.map((slot, index) => (
-          <LoraCard
-            key={index}
-            index={index as 0 | 1 | 2}
-            slot={slot}
-            loras={loras}
-            lorasStatus={lorasStatus}
-            loraError={loraError}
-            onReloadLoras={onReloadLoras}
-          />
-        ))}
-      </div>
+      <details
+        data-testid="lora-settings"
+        className="rounded-xl border border-white/10 bg-slate-900/50"
+      >
+        <summary className="cursor-pointer select-none px-3 py-3 text-sm font-semibold text-slate-100">
+          LoRA
+          {enabledLoraCount > 0 && (
+            <span className="ml-2 text-xs font-normal text-cyan-200">
+              · {enabledLoraCount} enabled
+            </span>
+          )}
+        </summary>
+        <div className="space-y-2 border-t border-white/10 px-3 pb-3 pt-3">
+          {form.loras.map((slot, index) => (
+            <LoraCard
+              key={index}
+              index={index as 0 | 1 | 2}
+              slot={slot}
+              loras={loras}
+              lorasStatus={lorasStatus}
+              loraError={loraError}
+              onReloadLoras={onReloadLoras}
+            />
+          ))}
+        </div>
+      </details>
     </section>
   );
 }

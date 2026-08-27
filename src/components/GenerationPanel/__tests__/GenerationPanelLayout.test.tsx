@@ -48,12 +48,12 @@ describe('GenerationPanel fixed UI layout', () => {
     container.remove();
   });
 
-  it('reserves both measured fixed bars plus spacing below the last setting', async () => {
+  it('reserves the shared BottomBar plus spacing below the last setting', async () => {
     await act(async () => root.render(<GenerationPanel visible />));
 
     const panel = container.querySelector('[data-testid="generation-panel"]') as HTMLElement | null;
     expect(panel?.style.paddingBottom).toBe(
-      'calc(var(--generation-submit-bar-height, 0px) + var(--bottom-bar-offset, 80px) + 1rem)',
+      'calc(var(--bottom-bar-offset, 80px) + 1rem)',
     );
   });
 });

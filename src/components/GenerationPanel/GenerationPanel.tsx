@@ -1,21 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import type { Workflow } from '@/api/types';
-import * as api from '@/api/client';
 import { useGenerationForm } from '@/hooks/useGenerationForm';
 import { useCheckpoints } from '@/hooks/useCheckpoints';
 import { useLoras } from '@/hooks/useLoras';
 import { useWorkflowStore } from '@/hooks/useWorkflow';
+import { useSimpleGenerationStore } from '@/hooks/useSimpleGeneration';
 import defaultWorkflowAsset from '@/workflows/mobile_sdxl_default.json';
-import { useQueueStore } from '@/hooks/useQueue';
-import { buildPromptFromWorkflow } from '@/utils/buildPromptFromWorkflow';
-import { applyGenerationFormToWorkflow } from '@/utils/applyGenerationFormToWorkflow';
 import { generationParamsFromWorkflow } from '@/utils/generationParamsFromWorkflow';
 import { validateGenerationForm } from '@/utils/generationFormValidation';
-import { resolveGenerationSeed } from '@/utils/generationSeed';
 import { getCheckpointAutoSelection } from '@/utils/checkpointSelection';
 import { extractWorkflowFromImageFile } from '@/utils/imageWorkflowMetadata';
-import { QUEUE_WORKFLOW_LABEL_EXTRA_DATA_KEY } from '@/utils/queueWorkflowLabel';
 import { BasicSettings } from './BasicSettings';
 import { FeatureToggles } from './FeatureToggles';
 import { AdvancedSettings } from './AdvancedSettings';
@@ -27,69 +22,6 @@ function isWorkflow(value: unknown): value is Workflow {
 function cloneWorkflow(workflow: Workflow): Workflow {
   if (typeof structuredClone === 'function') return structuredClone(workflow);
   return JSON.parse(JSON.stringify(workflow)) as Workflow;
-}
-
-export interface GenerationSubmitBarProps {
-  disabled: boolean;
-  isGenerating: boolean;
-  onGenerate: () => void;
-  status: string | null;
-}
-
-export function GenerationSubmitBar({
-  disabled,
-  isGenerating,
-  onGenerate,
-  status,
-}: GenerationSubmitBarProps) {
-  const barRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const bar = barRef.current;
-    if (!bar) return;
-
-    const updateHeight = () => {
-      document.documentElement.style.setProperty(
-        '--generation-submit-bar-height',
-        `${bar.getBoundingClientRect().height}px`,
-      );
-    };
-    updateHeight();
-    window.addEventListener('resize', updateHeight);
-
-    let observer: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== 'undefined') {
-      observer = new ResizeObserver(updateHeight);
-      observer.observe(bar);
-    }
-
-    return () => {
-      window.removeEventListener('resize', updateHeight);
-      observer?.disconnect();
-      document.documentElement.style.removeProperty('--generation-submit-bar-height');
-    };
-  }, []);
-
-  return (
-    <div
-      data-testid="generation-submit-bar"
-      ref={barRef}
-      className="fixed left-0 right-0 z-30 border-t border-white/10 bg-slate-950/95 backdrop-blur"
-      style={{ bottom: 'var(--bottom-bar-offset, 80px)' }}
-    >
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-2 px-3 pb-3 pt-3">
-        <button
-          type="button"
-          onClick={onGenerate}
-          disabled={disabled}
-          className="min-h-14 w-full rounded-xl bg-cyan-400 px-4 py-3 text-lg font-bold text-slate-950 transition-colors hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isGenerating ? 'Queueing…' : 'Generate'}
-        </button>
-        {status && <p role="status" className="text-center text-xs text-slate-400">{status}</p>}
-      </div>
-    </div>
-  );
 }
 
 export function GenerationPanel({ visible }: { visible: boolean }) {
@@ -112,12 +44,22 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
     return cloneWorkflow(defaultWorkflowAsset as unknown as Workflow);
   }, []);
   const loadError = baseWorkflow ? null : 'The bundled mobile generation workflow is malformed.';
-  const [status, setStatus] = useState<string | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const setStatus = useSimpleGenerationStore((state) => state.setStatus);
+  const setGenerationContext = useSimpleGenerationStore((state) => state.setContext);
   const restoreInputRef = useRef<HTMLInputElement>(null);
   const [restoredCheckpointValue, setRestoredCheckpointValue] = useState<string | null>(null);
   const checkpoint = form.checkpoint;
   const setField = form.setField;
+
+  useEffect(() => {
+    setGenerationContext({
+      baseWorkflow,
+      nodeTypes,
+      checkpoints,
+      checkpointsStatus,
+    });
+  }, [baseWorkflow, checkpoints, checkpointsStatus, nodeTypes, setGenerationContext]);
+
   useEffect(() => {
     if (checkpointsStatus !== 'loaded') return;
     const nextCheckpoint = getCheckpointAutoSelection({
@@ -133,62 +75,6 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
     form,
     checkpointsStatus === 'loaded' ? checkpoints : undefined,
   );
-  const generateDisabled =
-    !baseWorkflow
-    || !nodeTypes
-    || checkpointsStatus !== 'loaded'
-    || isGenerating
-    || validationErrors.length > 0;
-
-  const handleGenerate = async () => {
-    if (validationErrors.length > 0) {
-      setStatus(validationErrors[0] ?? 'Fix the form errors before generating.');
-      return;
-    }
-    if (!baseWorkflow) {
-      setStatus('The bundled mobile workflow is unavailable.');
-      return;
-    }
-    if (!nodeTypes) {
-      setStatus('Node definitions are still loading. Try again in a moment.');
-      return;
-    }
-
-    setIsGenerating(true);
-    setStatus(null);
-    try {
-      const resolvedSeed = resolveGenerationSeed(form);
-      const executionWorkflow = applyGenerationFormToWorkflow(form, baseWorkflow, resolvedSeed);
-      const prompt = buildPromptFromWorkflow(executionWorkflow, nodeTypes);
-      const request: api.PromptQueueRequest = {
-        prompt,
-        client_id: api.clientId,
-        extra_data: {
-          [QUEUE_WORKFLOW_LABEL_EXTRA_DATA_KEY]: 'Simple generation',
-          extra_pnginfo: { workflow: executionWorkflow },
-        },
-      };
-      const response = await api.queuePrompt(request);
-      if (!response.prompt_id) throw new Error('ComfyUI did not return a prompt id.');
-
-      const queue = useQueueStore.getState();
-      queue.registerLocalPrompt(response.prompt_id);
-      queue.recordQueuedPrompt(response.prompt_id, request, { number: response.number });
-      void queue.fetchQueue();
-      void api.upsertQueuePromptMetadata({
-        promptId: response.prompt_id,
-        workflowLabel: 'Simple generation',
-        clientId: api.clientId,
-      }).catch(() => {});
-      form.patch({ seed: resolvedSeed });
-      setStatus(`Generation queued. Seed: ${resolvedSeed}`);
-    } catch (error: unknown) {
-      setStatus(error instanceof Error ? error.message : 'Failed to queue generation.');
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
   const handleRestoreImage = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = '';
@@ -215,9 +101,9 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
       data-testid="generation-panel"
       className="min-h-full bg-slate-950 px-3 pt-4 text-slate-100"
       style={{
-        // App's other panels reserve the bottom navigation in #main-content;
-        // this panel owns both fixed bars so its last settings remain reachable.
-        paddingBottom: 'calc(var(--generation-submit-bar-height, 0px) + var(--bottom-bar-offset, 80px) + 1rem)',
+        // BottomBar owns the only fixed generation control now; reserve its
+        // measured height plus a small breathing room below the last setting.
+        paddingBottom: 'calc(var(--bottom-bar-offset, 80px) + 1rem)',
       }}
     >
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
@@ -274,12 +160,6 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
 
         <AdvancedSettings nodeTypes={nodeTypes} />
       </div>
-      <GenerationSubmitBar
-        disabled={generateDisabled}
-        isGenerating={isGenerating}
-        onGenerate={() => void handleGenerate()}
-        status={status}
-      />
     </div>
   );
 }

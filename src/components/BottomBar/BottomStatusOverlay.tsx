@@ -246,7 +246,8 @@ export function BottomStatusOverlay() {
   return (
     <div
       id="bottom-status-overlay"
-      className="fixed inset-x-0 bottom-20 z-[2000] flex flex-col items-center gap-3 pointer-events-none"
+      className="fixed inset-x-0 z-[2000] flex flex-col items-center gap-3 pointer-events-none"
+      style={{ bottom: 'var(--bottom-bar-offset, 80px)' }}
     >
       {shouldShowError && (
         <div

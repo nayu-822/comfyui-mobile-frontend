@@ -15,6 +15,7 @@ import { RunButton } from "./BottomBar/RunButton";
 import { RunCountSelector } from "./BottomBar/RunCountSelector";
 import { SkipButton } from "./BottomBar/SkipButton";
 import { WorkflowSelectionButton } from "./BottomBar/WorkflowSelectionButton";
+import { SimpleGenerationButton } from "./BottomBar/SimpleGenerationButton";
 
 export type BottomBarProps = {
   currentPanel: 'generation' | 'workflow' | 'queue' | 'outputs';
@@ -134,32 +135,38 @@ export function BottomBar(props: BottomBarProps) {
         id="bottom-bar-content"
         className="flex items-center gap-2 px-1.5 py-2 max-w-lg mx-auto"
       >
-        {!isGenerationPanel && !infiniteLoop && !isStopping && <RunCountSelector />}
-
-        {/* Infinite-mode "skip to next iteration" belongs with the generation
-            controls; the outputs panel is a gallery, so it hides there. */}
-        {!isOutputsPanel && !isGenerationPanel && <SkipButton />}
-
-        {!isGenerationPanel && <RunButton />}
-
-        {infiniteModeEnabled && !isGenerationPanel && <InfiniteLoopToggle />}
-
-        {isOutputsPanel && <OutputsActionButton />}
-
-        {!isOutputsPanel && !isGenerationPanel && <PinnedWidgetButton />}
-
-        {workflowSelectionActive ? (
-          <WorkflowSelectionButton />
+        {isGenerationPanel ? (
+          <SimpleGenerationButton />
         ) : (
-          <FollowQueueButton
-            viewerOpen={viewerOpen}
-            followQueue={followQueue}
-            queueSize={queueSize}
-            overallProgress={overallProgress}
-            showIdleProgress={infiniteLoop}
-            onToggleFollowQueue={onToggleFollowQueue}
-            onOpenFollowQueue={onOpenFollowQueue}
-          />
+          <>
+            {!infiniteLoop && !isStopping && <RunCountSelector />}
+
+            {/* Infinite-mode "skip to next iteration" belongs with the generation
+                controls; the outputs panel is a gallery, so it hides there. */}
+            {!isOutputsPanel && <SkipButton />}
+
+            <RunButton />
+
+            {infiniteModeEnabled && <InfiniteLoopToggle />}
+
+            {isOutputsPanel && <OutputsActionButton />}
+
+            {!isOutputsPanel && <PinnedWidgetButton />}
+
+            {workflowSelectionActive ? (
+              <WorkflowSelectionButton />
+            ) : (
+              <FollowQueueButton
+                viewerOpen={viewerOpen}
+                followQueue={followQueue}
+                queueSize={queueSize}
+                overallProgress={overallProgress}
+                showIdleProgress={infiniteLoop}
+                onToggleFollowQueue={onToggleFollowQueue}
+                onOpenFollowQueue={onOpenFollowQueue}
+              />
+            )}
+          </>
         )}
       </div>
 

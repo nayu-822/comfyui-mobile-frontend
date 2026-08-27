@@ -105,6 +105,37 @@ describe('BasicSettings', () => {
     expect(useGenerationForm.getState().checkpoint).toBe('restored/missing.safetensors');
   });
 
+  it('keeps the LoRA section closed initially and shows the enabled count', async () => {
+    useGenerationForm.getState().patch({
+      loras: [
+        { enabled: true, name: 'models/style.safetensors', strengthModel: 1, strengthClip: 1 },
+        { enabled: true, name: 'models/other.safetensors', strengthModel: 1, strengthClip: 1 },
+        ...useGenerationForm.getState().loras.slice(2),
+      ] as LoraSlots,
+    });
+
+    await act(async () => root.render(<BasicSettings {...props} />));
+
+    const details = container.querySelector('[data-testid="lora-settings"]') as HTMLDetailsElement | null;
+    expect(details?.open).toBe(false);
+    expect(details?.querySelector('summary')?.textContent).toContain('LoRA');
+    expect(details?.querySelector('summary')?.textContent).toContain('2 enabled');
+  });
+
+  it('preserves LoRA ON/OFF controls inside the collapsed section', async () => {
+    await act(async () => root.render(<BasicSettings {...props} />));
+
+    const toggles = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
+    expect(toggles).toHaveLength(3);
+    expect(toggles[0]?.checked).toBe(false);
+
+    await act(async () => toggles[0]?.click());
+
+    expect(useGenerationForm.getState().loras[0].enabled).toBe(true);
+    expect(container.querySelector('[data-testid="lora-settings"] summary')?.textContent)
+      .toContain('1 enabled');
+  });
+
   it('notifies the parent when the user changes the checkpoint', async () => {
     const onCheckpointChangedByUser = vi.fn();
 
