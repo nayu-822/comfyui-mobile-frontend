@@ -1,4 +1,12 @@
-import { HIRES_RESIZE_METHODS, type GenerationFormState } from '@/hooks/useGenerationForm';
+import {
+  HIRES_RESIZE_METHODS,
+  MAX_BATCH_COUNT,
+  MAX_BATCH_SIZE,
+  MIN_BATCH_COUNT,
+  MIN_BATCH_SIZE,
+  type GenerationFormState,
+} from '@/hooks/useGenerationForm';
+import { MAX_GENERATION_SEED } from '@/utils/generationSeed';
 
 const PLACEHOLDER_MODEL_NAME = /^(?:PUT_[A-Z0-9_]+_HERE|PLACEHOLDER(?:_[A-Z0-9_]+)?|YOUR_[A-Z0-9_]+_HERE)(?:\.[A-Z0-9._-]+)?$/i;
 
@@ -42,11 +50,18 @@ export function validateGenerationForm(
 
   if (!isFiniteAtLeast(form.width, 64)) errors.push('Width must be at least 64.');
   if (!isFiniteAtLeast(form.height, 64)) errors.push('Height must be at least 64.');
+  if (!Number.isSafeInteger(form.batchSize) || form.batchSize < MIN_BATCH_SIZE || form.batchSize > MAX_BATCH_SIZE) {
+    errors.push(`Batch size must be an integer between ${MIN_BATCH_SIZE} and ${MAX_BATCH_SIZE}.`);
+  }
+  if (!Number.isSafeInteger(form.batchCount) || form.batchCount < MIN_BATCH_COUNT || form.batchCount > MAX_BATCH_COUNT) {
+    errors.push(`Batch count must be an integer between ${MIN_BATCH_COUNT} and ${MAX_BATCH_COUNT}.`);
+  }
   if (!isFiniteAtLeast(form.steps, 1)) errors.push('Steps must be at least 1.');
   if (!isFiniteAtLeast(form.cfg, 0)) errors.push('CFG must be at least 0.');
   if (form.seedMode === 'fixed') {
     if (!Number.isSafeInteger(form.seed)) errors.push('Seed must be an integer.');
     else if (form.seed < 0) errors.push('Seed must be at least 0.');
+    else if (form.seed > MAX_GENERATION_SEED) errors.push(`Seed must be at most ${MAX_GENERATION_SEED}.`);
   }
 
   if (form.hiresEnabled) {

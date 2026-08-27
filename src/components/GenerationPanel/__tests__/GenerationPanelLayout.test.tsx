@@ -26,9 +26,10 @@ vi.mock('@/hooks/useWorkflow', () => ({
     selector({ nodeTypes: null }),
 }));
 
-vi.mock('../BasicSettings', () => ({ BasicSettings: () => null }));
-vi.mock('../FeatureToggles', () => ({ FeatureToggles: () => null }));
-vi.mock('../AdvancedSettings', () => ({ AdvancedSettings: () => null }));
+vi.mock('../BasicSettings', () => ({ BasicSettings: () => <div data-testid="basic-settings" /> }));
+vi.mock('../FeatureToggles', () => ({ FeatureToggles: () => <div data-testid="feature-toggles" /> }));
+vi.mock('../AdvancedSettings', () => ({ AdvancedSettings: () => <div data-testid="advanced-settings" /> }));
+vi.mock('../BatchSettings', () => ({ BatchSettings: () => <div data-testid="batch-settings" /> }));
 
 import { GenerationPanel } from '../GenerationPanel';
 
@@ -55,5 +56,12 @@ describe('GenerationPanel fixed UI layout', () => {
     expect(panel?.style.paddingBottom).toBe(
       'calc(var(--bottom-bar-offset, 80px) + 1rem)',
     );
+    const order = ['basic-settings', 'feature-toggles', 'advanced-settings', 'batch-settings'];
+    const positions = order.map((testId) => {
+      const element = container.querySelector(`[data-testid="${testId}"]`);
+      expect(element).not.toBeNull();
+      return Array.from(container.querySelectorAll('[data-testid]')).indexOf(element as HTMLElement);
+    });
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
   });
 });

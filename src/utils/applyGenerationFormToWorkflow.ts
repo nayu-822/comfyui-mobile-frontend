@@ -1,5 +1,9 @@
 import type { Workflow, WorkflowNode } from '@/api/types';
-import type { GenerationFormState } from '@/hooks/useGenerationForm';
+import {
+  MAX_BATCH_SIZE,
+  MIN_BATCH_SIZE,
+  type GenerationFormState,
+} from '@/hooks/useGenerationForm';
 import { findMobileNode, getMobileGenerationProfile } from '@/config/workflowProfile';
 import { replaceWorkflowInputLink } from '@/utils/workflowLinks';
 
@@ -50,6 +54,11 @@ function finiteNumber(value: number, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function clampedInteger(value: number, minimum: number, maximum: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(minimum, Math.min(maximum, Math.round(value)));
+}
+
 function updateNamedNode(
   workflow: Workflow,
   name: string,
@@ -91,7 +100,12 @@ export function applyGenerationFormToWorkflow(
   workflow = updateNamedNode(workflow, nodeNames.size, (node) => {
     let next = setGenerationWidgetValue(node, 0, Math.round(finiteNumber(form.width, 1024)), 'width');
     next = setGenerationWidgetValue(next, 1, Math.round(finiteNumber(form.height, 1536)), 'height');
-    return setGenerationWidgetValue(next, 2, 1, 'batch_size');
+    return setGenerationWidgetValue(
+      next,
+      2,
+      clampedInteger(form.batchSize, MIN_BATCH_SIZE, MAX_BATCH_SIZE, MIN_BATCH_SIZE),
+      'batch_size',
+    );
   });
 
   workflow = updateNamedNode(workflow, nodeNames.baseSampler, (node) => {

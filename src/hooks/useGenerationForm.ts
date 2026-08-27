@@ -11,6 +11,12 @@ export type LoraSlots = [LoraSlot, LoraSlot, LoraSlot];
 export type SeedMode = 'random' | 'fixed';
 export type HiresMode = 'latent' | 'resize';
 export const HIRES_RESIZE_METHODS = ['lanczos', 'bicubic', 'bilinear', 'nearest-exact'] as const;
+export const BATCH_SIZE_OPTIONS = [1, 2, 3, 4, 6, 8] as const;
+export const BATCH_COUNT_OPTIONS = [1, 2, 3, 4, 5, 6, 8, 10, 15, 20] as const;
+export const MIN_BATCH_SIZE = 1;
+export const MAX_BATCH_SIZE = 8;
+export const MIN_BATCH_COUNT = 1;
+export const MAX_BATCH_COUNT = 20;
 export type HiresResizeMethod = (typeof HIRES_RESIZE_METHODS)[number];
 
 export interface GenerationFormState {
@@ -19,6 +25,8 @@ export interface GenerationFormState {
   negativePrompt: string;
   width: number;
   height: number;
+  batchSize: number;
+  batchCount: number;
   seedMode: SeedMode;
   seed: number;
   steps: number;
@@ -52,6 +60,8 @@ export const DEFAULT_GENERATION_FORM_STATE: GenerationFormState = {
   negativePrompt: 'lowres, worst quality, bad anatomy',
   width: 1024,
   height: 1536,
+  batchSize: 1,
+  batchCount: 1,
   seedMode: 'random',
   seed: 123456789,
   steps: 28,

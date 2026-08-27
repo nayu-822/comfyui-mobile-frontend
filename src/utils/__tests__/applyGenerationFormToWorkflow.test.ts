@@ -122,6 +122,17 @@ describe('applyGenerationFormToWorkflow', () => {
     expect(defaults.resizeMethod).toBe('lanczos');
   });
 
+  it('writes the requested batch size and clamps it to a safe integer range', () => {
+    const requested = applyGenerationFormToWorkflow({ ...form(), batchSize: 4 }, makeWorkflow());
+    expect((find(requested, 'MOBILE_SIZE').widgets_values as unknown[])[2]).toBe(4);
+
+    const tooSmall = applyGenerationFormToWorkflow({ ...form(), batchSize: 0 }, makeWorkflow());
+    expect((find(tooSmall, 'MOBILE_SIZE').widgets_values as unknown[])[2]).toBe(1);
+
+    const tooLarge = applyGenerationFormToWorkflow({ ...form(), batchSize: 99.4 }, makeWorkflow());
+    expect((find(tooLarge, 'MOBILE_SIZE').widgets_values as unknown[])[2]).toBe(8);
+  });
+
   it.each([
     [false, false, false],
     [true, false, false],

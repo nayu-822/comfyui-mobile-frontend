@@ -14,6 +14,7 @@ import { extractWorkflowFromImageFile } from '@/utils/imageWorkflowMetadata';
 import { BasicSettings } from './BasicSettings';
 import { FeatureToggles } from './FeatureToggles';
 import { AdvancedSettings } from './AdvancedSettings';
+import { BatchSettings } from './BatchSettings';
 
 function isWorkflow(value: unknown): value is Workflow {
   return Boolean(value) && typeof value === 'object' && Array.isArray((value as { nodes?: unknown }).nodes);
@@ -159,6 +160,7 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
         </div>
 
         <AdvancedSettings nodeTypes={nodeTypes} />
+        <BatchSettings />
       </div>
     </div>
   );

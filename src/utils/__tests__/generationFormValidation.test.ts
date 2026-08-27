@@ -13,6 +13,11 @@ function form(): GenerationFormState {
 }
 
 describe('generationFormValidation', () => {
+  it('defaults batch size and count to one', () => {
+    expect(DEFAULT_GENERATION_FORM_STATE.batchSize).toBe(1);
+    expect(DEFAULT_GENERATION_FORM_STATE.batchCount).toBe(1);
+  });
+
   it('recognizes empty and shipped placeholder model names', () => {
     expect(isEmptyOrPlaceholderModelName('')).toBe(true);
     expect(isEmptyOrPlaceholderModelName('PUT_CHECKPOINT_HERE.safetensors')).toBe(true);
@@ -52,6 +57,18 @@ describe('generationFormValidation', () => {
       'CFG must be at least 0.',
       'Seed must be at least 0.',
     ]);
+  });
+
+  it.each([
+    ['batchSize', 0, 'Batch size must be an integer between 1 and 8.'],
+    ['batchSize', 9, 'Batch size must be an integer between 1 and 8.'],
+    ['batchCount', 0, 'Batch count must be an integer between 1 and 20.'],
+    ['batchCount', 21, 'Batch count must be an integer between 1 and 20.'],
+  ] as const)('rejects %s=%s', (field, value, message) => {
+    const next = form();
+    next.checkpoint = 'real-checkpoint.safetensors';
+    next[field] = value;
+    expect(validateGenerationForm(next)).toEqual([message]);
   });
 
   it('requires an integer seed only in fixed mode', () => {
