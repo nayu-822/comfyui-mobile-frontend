@@ -89,6 +89,7 @@ vi.mock('@/components/BottomBar/SimpleGenerationButton', () => ({
   SimpleGenerationButton: () => (
     <div data-testid="simple-generation-controls">
       <button data-testid="latest-image-button" type="button">Latest</button>
+      <button data-testid="outputs-button" type="button">Outputs</button>
       <button data-testid="simple-generation-button" type="button">Generate</button>
     </div>
   ),
@@ -116,6 +117,7 @@ describe('BottomBar panel-specific controls', () => {
 
     expect(container.querySelector('#bottom-bar-root')).not.toBeNull();
     expect(container.querySelector('[data-testid="latest-image-button"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="outputs-button"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="simple-generation-button"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="generation-submit-bar"]')).toBeNull();
     expect(container.querySelector('[data-testid="run-button"]')).toBeNull();
