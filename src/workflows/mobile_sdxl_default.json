@@ -1,5 +1,5 @@
 {
-  "last_node_id": 22,
+  "last_node_id": 20,
   "last_link_id": 42,
   "nodes": [
     {
@@ -395,7 +395,7 @@
           "links": [
             13,
             30,
-            41
+            42
           ],
           "slot_index": 0
         }
@@ -499,9 +499,7 @@
         {
           "name": "LATENT",
           "type": "LATENT",
-          "links": [
-            18
-          ],
+          "links": [],
           "slot_index": 0
         }
       ],
@@ -692,9 +690,7 @@
         {
           "name": "LATENT",
           "type": "LATENT",
-          "links": [
-            39
-          ],
+          "links": [],
           "slot_index": 0
         }
       ],
@@ -710,116 +706,6 @@
         "euler_ancestral",
         "normal",
         0.35
-      ]
-    },
-    {
-      "id": 21,
-      "type": "ComfySwitchNode",
-      "pos": [
-        3640,
-        260
-      ],
-      "size": [
-        240,
-        120
-      ],
-      "flags": {},
-      "order": 14,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "on_false",
-          "type": "*",
-          "link": 18,
-          "slot_index": 0
-        },
-        {
-          "name": "on_true",
-          "type": "*",
-          "link": 39,
-          "slot_index": 1
-        },
-        {
-          "name": "switch",
-          "type": "BOOLEAN",
-          "link": null,
-          "slot_index": 2,
-          "widget": {
-            "name": "switch"
-          }
-        }
-      ],
-      "outputs": [
-        {
-          "name": "output",
-          "type": "*",
-          "links": [
-            40
-          ],
-          "slot_index": 0
-        }
-      ],
-      "title": "MOBILE_HIRES_MODE",
-      "properties": {
-        "Node name for S&R": "MOBILE_HIRES_MODE"
-      },
-      "widgets_values": [
-        false
-      ]
-    },
-    {
-      "id": 22,
-      "type": "ComfySwitchNode",
-      "pos": [
-        4000,
-        260
-      ],
-      "size": [
-        240,
-        120
-      ],
-      "flags": {},
-      "order": 15,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "on_false",
-          "type": "*",
-          "link": 41,
-          "slot_index": 0
-        },
-        {
-          "name": "on_true",
-          "type": "*",
-          "link": 40,
-          "slot_index": 1
-        },
-        {
-          "name": "switch",
-          "type": "BOOLEAN",
-          "link": null,
-          "slot_index": 2,
-          "widget": {
-            "name": "switch"
-          }
-        }
-      ],
-      "outputs": [
-        {
-          "name": "output",
-          "type": "*",
-          "links": [
-            42
-          ],
-          "slot_index": 0
-        }
-      ],
-      "title": "MOBILE_HIRES_RESULT_SELECT",
-      "properties": {
-        "Node name for S&R": "MOBILE_HIRES_RESULT_SELECT"
-      },
-      "widgets_values": [
-        false
       ]
     },
     {
@@ -1324,14 +1210,6 @@
       "LATENT"
     ],
     [
-      18,
-      10,
-      0,
-      21,
-      0,
-      "LATENT"
-    ],
-    [
       19,
       1,
       2,
@@ -1492,32 +1370,8 @@
       "LATENT"
     ],
     [
-      39,
-      20,
-      0,
-      21,
-      1,
-      "LATENT"
-    ],
-    [
-      40,
-      21,
-      0,
-      22,
-      1,
-      "LATENT"
-    ],
-    [
-      41,
-      8,
-      0,
-      22,
-      0,
-      "LATENT"
-    ],
-    [
       42,
-      22,
+      8,
       0,
       11,
       0,
@@ -1543,12 +1397,10 @@
         "baseSampler": "MOBILE_BASE_SAMPLER",
         "hiresUpscale": "MOBILE_HIRES_UPSCALE",
         "hiresSampler": "MOBILE_HIRES_SAMPLER",
-        "hiresMode": "MOBILE_HIRES_MODE",
         "hiresResizeDecode": "MOBILE_HIRES_RESIZE_DECODE",
         "hiresResizeImage": "MOBILE_HIRES_RESIZE_IMAGE",
         "hiresResizeEncode": "MOBILE_HIRES_RESIZE_ENCODE",
         "hiresResizeSampler": "MOBILE_HIRES_RESIZE_SAMPLER",
-        "hiresResultSelect": "MOBILE_HIRES_RESULT_SELECT",
         "vaeDecode": "MOBILE_VAE_DECODE",
         "faceDetector": "MOBILE_FACE_DETECTOR",
         "faceDetailer": "MOBILE_FACE_DETAILER",
@@ -1579,12 +1431,10 @@
           "nodes": [
             "MOBILE_HIRES_UPSCALE",
             "MOBILE_HIRES_SAMPLER",
-            "MOBILE_HIRES_MODE",
             "MOBILE_HIRES_RESIZE_DECODE",
             "MOBILE_HIRES_RESIZE_IMAGE",
             "MOBILE_HIRES_RESIZE_ENCODE",
-            "MOBILE_HIRES_RESIZE_SAMPLER",
-            "MOBILE_HIRES_RESULT_SELECT"
+            "MOBILE_HIRES_RESIZE_SAMPLER"
           ],
           "defaultEnabled": false
         },

@@ -1,6 +1,7 @@
 import type { Workflow, WorkflowNode } from '@/api/types';
 import type { GenerationFormState } from '@/hooks/useGenerationForm';
-import { getMobileGenerationProfile } from '@/config/workflowProfile';
+import { findMobileNode, getMobileGenerationProfile } from '@/config/workflowProfile';
+import { replaceWorkflowInputLink } from '@/utils/workflowLinks';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -71,11 +72,7 @@ function setMode(workflow: Workflow, name: string, mode: 0 | 4): Workflow {
   return updateNamedNode(workflow, name, (node) => ({ ...node, mode }));
 }
 
-/**
- * Apply the form to a cloned mobile workflow. Topology and links are deliberately
- * untouched: optional branches are selected through ComfyUI bypass modes and
- * the standard Hires result switches.
- */
+/** Apply the form to a cloned mobile workflow and select one executable result path. */
 export function applyGenerationFormToWorkflow(
   form: GenerationFormState,
   sourceWorkflow: Workflow,
@@ -145,12 +142,27 @@ export function applyGenerationFormToWorkflow(
     next = setGenerationWidgetValue(next, 5, form.hiresScheduler, 'scheduler');
     return setGenerationWidgetValue(next, 6, finiteNumber(form.hiresDenoise, 0.35), 'denoise');
   });
-  workflow = setMode(workflow, nodeNames.hiresMode, 0);
-  workflow = updateNamedNode(workflow, nodeNames.hiresMode, (node) =>
-    setGenerationWidgetValue(node, 0, form.hiresMode === 'resize', 'switch'));
-  workflow = setMode(workflow, nodeNames.hiresResultSelect, 0);
-  workflow = updateNamedNode(workflow, nodeNames.hiresResultSelect, (node) =>
-    setGenerationWidgetValue(node, 0, form.hiresEnabled, 'switch'));
+
+  // The canonical workflow has no frontend-only ComfySwitchNode. Select the
+  // final latent at the real consumer instead, so bypassed branch nodes never
+  // leave a prompt input pointing at a node that buildPromptFromWorkflow drops.
+  const finalLatentNodeName = !form.hiresEnabled
+    ? nodeNames.baseSampler
+    : form.hiresMode === 'latent'
+      ? nodeNames.hiresSampler
+      : nodeNames.hiresResizeSampler;
+  workflow = replaceNamedWorkflowInputLink(
+    workflow,
+    nodeNames.vaeDecode,
+    'samples',
+    finalLatentNodeName,
+    'LATENT',
+  );
+
+  // Keep old switch widgets restorable for workflows created before the
+  // canonical graph stopped using ComfySwitchNode. They are not present in
+  // the bundled execution workflow and therefore cannot enter its prompt.
+  workflow = updateLegacyHiresSwitches(workflow, nodeNames, form);
 
   workflow = updateNamedNode(workflow, nodeNames.faceDetector, (node) =>
     setGenerationWidgetValue(node, 0, 'bbox/face_yolov8m.pt', 'model_name'));
@@ -182,4 +194,41 @@ export function applyGenerationFormToWorkflow(
     ));
 
   return workflow;
+}
+
+function replaceNamedWorkflowInputLink(
+  workflow: Workflow,
+  targetName: string,
+  targetInputName: string,
+  sourceName: string,
+  sourceOutputName: string,
+): Workflow {
+  const target = findMobileNode(workflow, targetName);
+  const source = findMobileNode(workflow, sourceName);
+  if (!target || !source) return workflow;
+
+  const targetInputSlot = target.inputs.findIndex((input) => input.name === targetInputName);
+  const sourceOutputSlot = source.outputs.findIndex((output) => output.name === sourceOutputName);
+  if (targetInputSlot < 0 || sourceOutputSlot < 0) return workflow;
+
+  return replaceWorkflowInputLink(
+    workflow,
+    target.id,
+    targetInputSlot,
+    source.id,
+    sourceOutputSlot,
+  );
+}
+
+function updateLegacyHiresSwitches(
+  workflow: Workflow,
+  nodeNames: ReturnType<typeof getMobileGenerationProfile>['nodeNames'],
+  form: GenerationFormState,
+): Workflow {
+  let next = setMode(workflow, nodeNames.hiresMode, 0);
+  next = updateNamedNode(next, nodeNames.hiresMode, (node) =>
+    setGenerationWidgetValue(node, 0, form.hiresMode === 'resize', 'switch'));
+  next = setMode(next, nodeNames.hiresResultSelect, 0);
+  return updateNamedNode(next, nodeNames.hiresResultSelect, (node) =>
+    setGenerationWidgetValue(node, 0, form.hiresEnabled, 'switch'));
 }

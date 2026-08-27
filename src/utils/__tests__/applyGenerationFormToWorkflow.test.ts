@@ -13,6 +13,7 @@ function node(
   title: string,
   widgets_values: unknown,
   mode = 0,
+  overrides: Partial<WorkflowNode> = {},
 ): WorkflowNode {
   return {
     id,
@@ -27,6 +28,7 @@ function node(
     outputs: [],
     properties: { 'Node name for S&R': title },
     widgets_values: widgets_values as WorkflowNode['widgets_values'],
+    ...overrides,
   };
 }
 
@@ -42,10 +44,16 @@ function makeWorkflow(): Workflow {
       node(105, 'CLIPTextEncode', 'MOBILE_POSITIVE', 'old positive'),
       node(106, 'CLIPTextEncode', 'MOBILE_NEGATIVE', 'old negative'),
       node(107, 'EmptyLatentImage', 'MOBILE_SIZE', [512, 512, 4]),
-      node(108, 'KSampler', 'MOBILE_BASE_SAMPLER', [1, 'fixed', 10, 3, 'euler', 'normal', 1]),
+      node(108, 'KSampler', 'MOBILE_BASE_SAMPLER', [1, 'fixed', 10, 3, 'euler', 'normal', 1], 0, {
+        outputs: [{ name: 'LATENT', type: 'LATENT', links: [1], slot_index: 0 }],
+      }),
       node(109, 'LatentUpscaleBy', 'MOBILE_HIRES_UPSCALE', ['bilinear', 1.5], 4),
-      node(110, 'KSampler', 'MOBILE_HIRES_SAMPLER', [1, 'fixed', 10, 3, 'euler', 'normal', 0.3], 4),
-      node(111, 'VAEDecode', 'MOBILE_VAE_DECODE', undefined),
+      node(110, 'KSampler', 'MOBILE_HIRES_SAMPLER', [1, 'fixed', 10, 3, 'euler', 'normal', 0.3], 4, {
+        outputs: [{ name: 'LATENT', type: 'LATENT', links: [], slot_index: 0 }],
+      }),
+      node(111, 'VAEDecode', 'MOBILE_VAE_DECODE', undefined, 0, {
+        inputs: [{ name: 'samples', type: 'LATENT', link: 1 }],
+      }),
       node(112, 'UltralyticsDetectorProvider', 'MOBILE_FACE_DETECTOR', 'old.pt'),
       node(113, 'FaceDetailer', 'MOBILE_FACE_DETAILER', [768, true, 1024, 1, 'fixed', 10, 3, 'euler', 'normal', 0.3, 5, true, true, 0.5], 4),
       node(114, 'UpscaleModelLoader', 'MOBILE_UPSCALE_MODEL', 'old.pth'),
@@ -54,11 +62,13 @@ function makeWorkflow(): Workflow {
       node(117, 'VAEDecode', 'MOBILE_HIRES_RESIZE_DECODE', undefined, 4),
       node(118, 'ImageScaleBy', 'MOBILE_HIRES_RESIZE_IMAGE', ['lanczos', 1.5], 4),
       node(119, 'VAEEncode', 'MOBILE_HIRES_RESIZE_ENCODE', undefined, 4),
-      node(120, 'KSampler', 'MOBILE_HIRES_RESIZE_SAMPLER', [1, 'fixed', 10, 3, 'euler', 'normal', 0.3], 4),
+      node(120, 'KSampler', 'MOBILE_HIRES_RESIZE_SAMPLER', [1, 'fixed', 10, 3, 'euler', 'normal', 0.3], 4, {
+        outputs: [{ name: 'LATENT', type: 'LATENT', links: [], slot_index: 0 }],
+      }),
       node(121, 'ComfySwitchNode', 'MOBILE_HIRES_MODE', [false]),
       node(122, 'ComfySwitchNode', 'MOBILE_HIRES_RESULT_SELECT', [false]),
     ],
-    links: [],
+    links: [[1, 108, 0, 111, 0, 'LATENT']],
     groups: [],
     config: {},
     extra: {

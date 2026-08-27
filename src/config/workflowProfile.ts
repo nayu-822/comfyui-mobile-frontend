@@ -9,11 +9,13 @@ export interface MobileNodeNames {
   baseSampler: string;
   hiresUpscale: string;
   hiresSampler: string;
+  /** Legacy ComfySwitchNode name; absent from the current canonical graph. */
   hiresMode: string;
   hiresResizeDecode: string;
   hiresResizeImage: string;
   hiresResizeEncode: string;
   hiresResizeSampler: string;
+  /** Legacy ComfySwitchNode name; absent from the current canonical graph. */
   hiresResultSelect: string;
   vaeDecode: string;
   faceDetector: string;
@@ -64,12 +66,10 @@ const DEFAULT_FEATURES: Record<string, MobileFeatureProfile> = {
     nodes: [
       DEFAULT_MOBILE_NODE_NAMES.hiresUpscale,
       DEFAULT_MOBILE_NODE_NAMES.hiresSampler,
-      DEFAULT_MOBILE_NODE_NAMES.hiresMode,
       DEFAULT_MOBILE_NODE_NAMES.hiresResizeDecode,
       DEFAULT_MOBILE_NODE_NAMES.hiresResizeImage,
       DEFAULT_MOBILE_NODE_NAMES.hiresResizeEncode,
       DEFAULT_MOBILE_NODE_NAMES.hiresResizeSampler,
-      DEFAULT_MOBILE_NODE_NAMES.hiresResultSelect,
     ],
     defaultEnabled: false,
   },

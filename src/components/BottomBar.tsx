@@ -92,6 +92,8 @@ export function BottomBar(props: BottomBarProps) {
         // In comparison view the bar is hidden, so report 0 and let the viewer
         // claim the full height. Re-runs (and restores the real height) when
         // inComparisonView flips, via the effect dependency below.
+        // The measured rect includes .safe-area-bottom, so this is the complete
+        // occupied height to use when positioning another fixed bottom control.
         inComparisonView ? "0px" : `${rect.height}px`,
       );
     };

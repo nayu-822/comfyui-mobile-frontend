@@ -42,12 +42,42 @@ export function GenerationSubmitBar({
   onGenerate,
   status,
 }: GenerationSubmitBarProps) {
+  const barRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+
+    const updateHeight = () => {
+      document.documentElement.style.setProperty(
+        '--generation-submit-bar-height',
+        `${bar.getBoundingClientRect().height}px`,
+      );
+    };
+    updateHeight();
+    window.addEventListener('resize', updateHeight);
+
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(updateHeight);
+      observer.observe(bar);
+    }
+
+    return () => {
+      window.removeEventListener('resize', updateHeight);
+      observer?.disconnect();
+      document.documentElement.style.removeProperty('--generation-submit-bar-height');
+    };
+  }, []);
+
   return (
     <div
       data-testid="generation-submit-bar"
-      className="fixed bottom-0 left-0 right-0 z-30 border-t border-white/10 bg-slate-950/95 backdrop-blur"
+      ref={barRef}
+      className="fixed left-0 right-0 z-30 border-t border-white/10 bg-slate-950/95 backdrop-blur"
+      style={{ bottom: 'var(--bottom-bar-offset, 80px)' }}
     >
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-2 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-2 px-3 pb-3 pt-3">
         <button
           type="button"
           onClick={onGenerate}
@@ -181,7 +211,15 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
   if (!visible) return null;
 
   return (
-    <div className="min-h-full bg-slate-950 px-3 pb-36 pt-4 text-slate-100">
+    <div
+      data-testid="generation-panel"
+      className="min-h-full bg-slate-950 px-3 pt-4 text-slate-100"
+      style={{
+        // App's other panels reserve the bottom navigation in #main-content;
+        // this panel owns both fixed bars so its last settings remain reachable.
+        paddingBottom: 'calc(var(--generation-submit-bar-height, 0px) + var(--bottom-bar-offset, 80px) + 1rem)',
+      }}
+    >
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
         <div className="rounded-xl border border-cyan-400/20 bg-cyan-950/20 px-3 py-3 text-sm text-slate-300">
           <div className="font-semibold text-cyan-200">Simple image generation</div>

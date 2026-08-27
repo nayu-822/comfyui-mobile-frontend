@@ -289,7 +289,11 @@ function App() {
         className="min-h-screen relative"
         style={{
           paddingTop: "var(--top-bar-offset, 69px)",
-          paddingBottom: "var(--bottom-bar-offset, 80px)",
+          // GenerationPanel reserves both fixed bars itself; the other panels
+          // continue to use the app-level bottom navigation reservation.
+          paddingBottom: currentPanel === 'generation'
+            ? '0px'
+            : "var(--bottom-bar-offset, 80px)",
         }}
       >
         <>
