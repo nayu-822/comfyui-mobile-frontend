@@ -3,12 +3,16 @@ import type { NodeTypes, Workflow } from '@/api/types';
 import * as api from '@/api/client';
 import { useGenerationForm } from '@/hooks/useGenerationForm';
 import type { CheckpointLoadStatus } from '@/hooks/useCheckpoints';
+import { useHistoryStore } from '@/hooks/useHistory';
+import { useImageViewerStore } from '@/hooks/useImageViewer';
 import { useQueueStore } from '@/hooks/useQueue';
+import { useWorkflowStore } from '@/hooks/useWorkflow';
 import { buildPromptFromWorkflow } from '@/utils/buildPromptFromWorkflow';
 import { applyGenerationFormToWorkflow } from '@/utils/applyGenerationFormToWorkflow';
 import { validateGenerationForm } from '@/utils/generationFormValidation';
 import { resolveGenerationSeed } from '@/utils/generationSeed';
 import { QUEUE_WORKFLOW_LABEL_EXTRA_DATA_KEY } from '@/utils/queueWorkflowLabel';
+import { buildOutputPreferredViewerImages } from '@/utils/viewerImages';
 
 export interface SimpleGenerationContext {
   baseWorkflow: Workflow | null;
@@ -19,10 +23,11 @@ export interface SimpleGenerationContext {
 
 interface SimpleGenerationState extends SimpleGenerationContext {
   isGenerating: boolean;
-  status: string | null;
+  error: string | null;
   setContext: (context: SimpleGenerationContext) => void;
-  setStatus: (status: string | null) => void;
+  setError: (error: string | null) => void;
   generate: () => Promise<boolean>;
+  openLatestImage: () => boolean;
 }
 
 const initialContext: SimpleGenerationContext = {
@@ -36,9 +41,30 @@ const initialContext: SimpleGenerationContext = {
 export const useSimpleGenerationStore = create<SimpleGenerationState>((set, get) => ({
   ...initialContext,
   isGenerating: false,
-  status: null,
+  error: null,
   setContext: (context) => set(context),
-  setStatus: (status) => set({ status }),
+  setError: (error) => set({ error }),
+  openLatestImage: () => {
+    const images = buildOutputPreferredViewerImages(
+      useHistoryStore.getState().history,
+      { alt: 'Generation' },
+    );
+    if (images.length === 0) return false;
+
+    // Keep the user on the Generation panel while opening the same full-screen
+    // viewer used by History/Outputs. The history list is newest-first, so the
+    // first image is the most recent generated image.
+    useWorkflowStore.getState().setFollowQueue(false);
+    useImageViewerStore.getState().setViewerState({
+      viewerImages: images,
+      viewerIndex: 0,
+      viewerScale: 1,
+      viewerTranslate: { x: 0, y: 0 },
+      viewerIdle: false,
+      viewerOpen: true,
+    });
+    return true;
+  },
   generate: async () => {
     const state = get();
     if (state.isGenerating) return false;
@@ -49,23 +75,23 @@ export const useSimpleGenerationStore = create<SimpleGenerationState>((set, get)
       state.checkpointsStatus === 'loaded' ? state.checkpoints : undefined,
     );
     if (validationErrors.length > 0) {
-      set({ status: validationErrors[0] ?? 'Fix the form errors before generating.' });
+      set({ error: validationErrors[0] ?? 'Fix the form errors before generating.' });
       return false;
     }
     if (!state.baseWorkflow) {
-      set({ status: 'The bundled mobile workflow is unavailable.' });
+      set({ error: 'The bundled mobile workflow is unavailable.' });
       return false;
     }
     if (!state.nodeTypes) {
-      set({ status: 'Node definitions are still loading. Try again in a moment.' });
+      set({ error: 'Node definitions are still loading. Try again in a moment.' });
       return false;
     }
     if (state.checkpointsStatus !== 'loaded') {
-      set({ status: 'Checkpoints are still loading. Try again in a moment.' });
+      set({ error: 'Checkpoints are still loading. Try again in a moment.' });
       return false;
     }
 
-    set({ isGenerating: true, status: null });
+    set({ isGenerating: true, error: null });
     try {
       const resolvedSeed = resolveGenerationSeed(form);
       const executionWorkflow = applyGenerationFormToWorkflow(
@@ -95,10 +121,9 @@ export const useSimpleGenerationStore = create<SimpleGenerationState>((set, get)
         clientId: api.clientId,
       }).catch(() => {});
       form.patch({ seed: resolvedSeed });
-      set({ status: `Generation queued. Seed: ${resolvedSeed}` });
       return true;
     } catch (error: unknown) {
-      set({ status: error instanceof Error ? error.message : 'Failed to queue generation.' });
+      set({ error: error instanceof Error ? error.message : 'Failed to queue generation.' });
       return false;
     } finally {
       set({ isGenerating: false });
@@ -114,8 +139,10 @@ export function useSimpleGeneration() {
   const checkpoints = useSimpleGenerationStore((state) => state.checkpoints);
   const checkpointsStatus = useSimpleGenerationStore((state) => state.checkpointsStatus);
   const isGenerating = useSimpleGenerationStore((state) => state.isGenerating);
-  const status = useSimpleGenerationStore((state) => state.status);
+  const error = useSimpleGenerationStore((state) => state.error);
   const generate = useSimpleGenerationStore((state) => state.generate);
+  const openLatestImage = useSimpleGenerationStore((state) => state.openLatestImage);
+  const history = useHistoryStore((state) => state.history);
 
   const validationErrors = validateGenerationForm(
     form,
@@ -128,12 +155,15 @@ export function useSimpleGeneration() {
       && !isGenerating
       && validationErrors.length === 0,
   );
+  const hasLatestImage = history.some((entry) => entry.outputs.images.length > 0);
 
   return {
     canGenerate,
     isGenerating,
-    status,
+    error,
+    hasLatestImage,
     validationErrors,
     generate,
+    openLatestImage,
   };
 }

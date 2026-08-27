@@ -44,7 +44,7 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
     return cloneWorkflow(defaultWorkflowAsset as unknown as Workflow);
   }, []);
   const loadError = baseWorkflow ? null : 'The bundled mobile generation workflow is malformed.';
-  const setStatus = useSimpleGenerationStore((state) => state.setStatus);
+  const setError = useSimpleGenerationStore((state) => state.setError);
   const setGenerationContext = useSimpleGenerationStore((state) => state.setContext);
   const restoreInputRef = useRef<HTMLInputElement>(null);
   const [restoredCheckpointValue, setRestoredCheckpointValue] = useState<string | null>(null);
@@ -82,15 +82,15 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
     try {
       const workflow = await extractWorkflowFromImageFile(file);
       if (!workflow) {
-        setStatus('No embedded ComfyUI workflow was found in that image.');
+        setError('No embedded ComfyUI workflow was found in that image.');
         return;
       }
       const patch = generationParamsFromWorkflow(workflow);
       if (patch.checkpoint !== undefined) setRestoredCheckpointValue(patch.checkpoint);
       form.patch(patch);
-      setStatus('Generation parameters restored from the image.');
+      setError(null);
     } catch (error: unknown) {
-      setStatus(error instanceof Error ? error.message : 'Failed to read image metadata.');
+      setError(error instanceof Error ? error.message : 'Failed to read image metadata.');
     }
   };
 

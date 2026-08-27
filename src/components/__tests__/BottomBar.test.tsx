@@ -86,7 +86,12 @@ vi.mock('@/components/BottomBar/WorkflowSelectionButton', () => ({
   WorkflowSelectionButton: () => <button data-testid="workflow-selection-button" type="button">Select</button>,
 }));
 vi.mock('@/components/BottomBar/SimpleGenerationButton', () => ({
-  SimpleGenerationButton: () => <button data-testid="simple-generation-button" type="button">Generate</button>,
+  SimpleGenerationButton: () => (
+    <div data-testid="simple-generation-controls">
+      <button data-testid="latest-image-button" type="button">Latest</button>
+      <button data-testid="simple-generation-button" type="button">Generate</button>
+    </div>
+  ),
 }));
 
 import { BottomBar } from '@/components/BottomBar';
@@ -110,6 +115,7 @@ describe('BottomBar panel-specific controls', () => {
     await act(async () => root.render(<BottomBar currentPanel="generation" />));
 
     expect(container.querySelector('#bottom-bar-root')).not.toBeNull();
+    expect(container.querySelector('[data-testid="latest-image-button"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="simple-generation-button"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="generation-submit-bar"]')).toBeNull();
     expect(container.querySelector('[data-testid="run-button"]')).toBeNull();
@@ -123,6 +129,7 @@ describe('BottomBar panel-specific controls', () => {
     await act(async () => root.render(<BottomBar currentPanel="workflow" />));
 
     expect(container.querySelector('[data-testid="simple-generation-button"]')).toBeNull();
+    expect(container.querySelector('[data-testid="latest-image-button"]')).toBeNull();
     expect(container.querySelector('[data-testid="run-button"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="run-count-selector"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="skip-button"]')).not.toBeNull();
