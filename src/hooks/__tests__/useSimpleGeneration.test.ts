@@ -1,3 +1,5 @@
+import { act, createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NodeTypes, Workflow } from '@/api/types';
 import mobileSdxlWorkflowAsset from '@/workflows/mobile_sdxl_default.json';
@@ -47,7 +49,10 @@ const workflowMocks = vi.hoisted(() => ({
 vi.mock('@/api/client', () => apiMocks);
 vi.mock('@/utils/generationSeed', () => seedMocks);
 vi.mock('@/hooks/useQueue', () => ({
-  useQueueStore: { getState: () => queueMocks },
+  useQueueStore: Object.assign(
+    (selector: (state: typeof queueMocks) => unknown) => selector(queueMocks),
+    { getState: () => queueMocks },
+  ),
 }));
 vi.mock('@/hooks/useHistory', () => ({
   useHistoryStore: Object.assign(
@@ -62,7 +67,12 @@ vi.mock('@/hooks/useWorkflow', () => ({
   useWorkflowStore: { getState: () => workflowMocks },
 }));
 
-import { useSimpleGenerationStore } from '../useSimpleGeneration';
+import { useSimpleGeneration, useSimpleGenerationStore } from '../useSimpleGeneration';
+
+function SimpleGenerationProbe() {
+  useSimpleGeneration();
+  return null;
+}
 
 const emptyWorkflow: Workflow = {
   last_node_id: 0,
@@ -106,6 +116,7 @@ describe('useSimpleGeneration shared submit state', () => {
       checkpointsStatus: 'loading',
       isGenerating: false,
       isCancelling: false,
+      cancelRequested: false,
       activePromptIds: [],
       error: null,
     });
@@ -155,6 +166,50 @@ describe('useSimpleGeneration shared submit state', () => {
     expect(useSimpleGenerationStore.getState().isGenerating).toBe(false);
     expect(useSimpleGenerationStore.getState().activePromptIds).toEqual(['prompt-1']);
     expect(useSimpleGenerationStore.getState().error).toBeNull();
+  });
+
+  it('keeps active prompt ids while the post-enqueue queue refresh is pending', async () => {
+    useGenerationForm.getState().patch({
+      checkpoint: 'models/checkpoint.safetensors',
+      seedMode: 'fixed',
+      seed: 42,
+    });
+    useSimpleGenerationStore.getState().setContext({
+      baseWorkflow: emptyWorkflow,
+      nodeTypes: {},
+      checkpoints: ['models/checkpoint.safetensors'],
+      checkpointsStatus: 'loaded',
+    });
+    let resolveFetch: ((success: boolean) => void) | undefined;
+    queueMocks.fetchQueue.mockImplementation(() => new Promise<boolean>((resolve) => {
+      resolveFetch = resolve;
+    }));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+
+    try {
+      await act(async () => root.render(createElement(SimpleGenerationProbe)));
+      let generation!: Promise<boolean>;
+      await act(async () => {
+        generation = useSimpleGenerationStore.getState().generate();
+        await vi.waitFor(() => {
+          expect(queueMocks.fetchQueue).toHaveBeenCalledTimes(1);
+          expect(useSimpleGenerationStore.getState().activePromptIds).toEqual(['prompt-1']);
+        });
+      });
+      expect(useSimpleGenerationStore.getState().isGenerating).toBe(true);
+
+      resolveFetch?.(true);
+      await act(async () => {
+        await expect(generation).resolves.toBe(true);
+      });
+      expect(useSimpleGenerationStore.getState().isGenerating).toBe(false);
+      expect(useSimpleGenerationStore.getState().activePromptIds).toEqual(['prompt-1']);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
   });
 
   it('queues one prompt per batch count with incrementing fixed seeds', async () => {
@@ -272,6 +327,60 @@ describe('useSimpleGeneration shared submit state', () => {
     expect(apiMocks.deleteQueueItem).not.toHaveBeenCalledWith('other-pending');
     expect(apiMocks.interruptExecution).not.toHaveBeenCalled();
     expect(useSimpleGenerationStore.getState().activePromptIds).toEqual([]);
+    expect(useSimpleGenerationStore.getState().isCancelling).toBe(false);
+  });
+
+  it('stops remaining batch enqueue work when cancellation is requested mid-batch', async () => {
+    useGenerationForm.getState().patch({
+      checkpoint: 'models/checkpoint.safetensors',
+      seedMode: 'fixed',
+      seed: 100,
+      batchCount: 4,
+    });
+    useSimpleGenerationStore.getState().setContext({
+      baseWorkflow: canonicalWorkflow,
+      nodeTypes: canonicalNodeTypes,
+      checkpoints: ['models/checkpoint.safetensors'],
+      checkpointsStatus: 'loaded',
+    });
+    let resolveSecondPrompt: ((response: { prompt_id: string; number: number }) => void) | undefined;
+    apiMocks.queuePrompt
+      .mockReset()
+      .mockResolvedValueOnce({ prompt_id: 'simple-one', number: 1 })
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveSecondPrompt = resolve;
+      }))
+      .mockResolvedValue({ prompt_id: 'should-not-be-queued', number: 3 });
+    queueMocks.pending = [
+      { prompt_id: 'simple-one' },
+      { prompt_id: 'other-pending' },
+    ];
+    queueMocks.running = [{ prompt_id: 'other-running' }];
+
+    const generation = useSimpleGenerationStore.getState().generate();
+    await vi.waitFor(() => expect(apiMocks.queuePrompt).toHaveBeenCalledTimes(2));
+    expect(useSimpleGenerationStore.getState().activePromptIds).toEqual(['simple-one']);
+
+    await expect(useSimpleGenerationStore.getState().cancelGeneration()).resolves.toBe(true);
+    expect(useSimpleGenerationStore.getState().cancelRequested).toBe(true);
+    expect(useSimpleGenerationStore.getState().isCancelling).toBe(true);
+
+    queueMocks.pending = [
+      { prompt_id: 'simple-one' },
+      { prompt_id: 'simple-two' },
+      { prompt_id: 'other-pending' },
+    ];
+    resolveSecondPrompt?.({ prompt_id: 'simple-two', number: 2 });
+
+    await expect(generation).resolves.toBe(false);
+    expect(apiMocks.queuePrompt).toHaveBeenCalledTimes(2);
+    expect(apiMocks.deleteQueueItem).toHaveBeenCalledTimes(2);
+    expect(apiMocks.deleteQueueItem).toHaveBeenCalledWith('simple-one');
+    expect(apiMocks.deleteQueueItem).toHaveBeenCalledWith('simple-two');
+    expect(apiMocks.deleteQueueItem).not.toHaveBeenCalledWith('other-pending');
+    expect(apiMocks.interruptExecution).not.toHaveBeenCalled();
+    expect(useSimpleGenerationStore.getState().activePromptIds).toEqual([]);
+    expect(useSimpleGenerationStore.getState().isGenerating).toBe(false);
     expect(useSimpleGenerationStore.getState().isCancelling).toBe(false);
   });
 

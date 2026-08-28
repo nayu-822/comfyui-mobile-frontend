@@ -61,12 +61,12 @@ export function BatchSettings() {
         Total images: <span className="font-semibold text-slate-100">{totalImages}</span>
       </p>
 
-      {activePromptIds.length > 0 && (
+      {(activePromptIds.length > 0 || isGenerating) && (
         <button
           type="button"
           data-testid="cancel-generation-button"
           onClick={() => void cancelGeneration()}
-          disabled={isCancelling || isGenerating}
+          disabled={isCancelling}
           aria-busy={isCancelling}
           className="min-h-14 w-full rounded-xl border border-red-300/40 bg-red-950/40 px-4 py-3 text-sm font-semibold text-red-100 transition-colors hover:bg-red-900/50 disabled:cursor-not-allowed disabled:opacity-50"
         >

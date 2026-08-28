@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { create } from 'zustand';
 import type { NodeTypes, Workflow } from '@/api/types';
 import * as api from '@/api/client';
@@ -30,13 +29,15 @@ export interface SimpleGenerationContext {
 interface SimpleGenerationState extends SimpleGenerationContext {
   isGenerating: boolean;
   isCancelling: boolean;
+  cancelRequested: boolean;
+  // Keep these ids until a new submit or a successful cancel. A queue snapshot
+  // can be stale while the backend is still accepting the just-submitted job.
   activePromptIds: string[];
   error: string | null;
   setContext: (context: SimpleGenerationContext) => void;
   setError: (error: string | null) => void;
   generate: () => Promise<boolean>;
   cancelGeneration: () => Promise<boolean>;
-  clearFinishedPromptIds: (promptIds: string[]) => void;
   openLatestImage: () => boolean;
 }
 
@@ -69,16 +70,68 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+async function cancelTrackedPromptIds(activePromptIds: readonly string[]): Promise<void> {
+  const queue = useQueueStore.getState();
+  if (!(await queue.fetchQueue())) {
+    throw new Error('Failed to refresh the queue before cancelling.');
+  }
+
+  if (activePromptIds.length === 0) return;
+
+  const activePromptIdSet = new Set(activePromptIds);
+  const pendingIds = new Set(
+    useQueueStore.getState().pending
+      .map((item) => item.prompt_id)
+      .filter((promptId) => activePromptIdSet.has(promptId)),
+  );
+  const failures: string[] = [];
+  const pendingIdList = [...pendingIds];
+  const deleteResults = await Promise.allSettled(
+    pendingIdList.map((promptId) => api.deleteQueueItem(promptId)),
+  );
+  deleteResults.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      const promptId = pendingIdList[index] ?? 'pending prompt';
+      failures.push(`${promptId}: ${errorMessage(result.reason, 'Failed to cancel queued generation.')}`);
+    }
+  });
+
+  // Refresh after pending deletions: a prompt can move from pending to
+  // running while the delete requests are in flight. Only interrupt when
+  // the latest queue snapshot still contains one of our prompt IDs.
+  const refreshedAfterDeletes = await queue.fetchQueue();
+  if (!refreshedAfterDeletes) {
+    failures.push('Failed to refresh the queue before interrupting.');
+  } else {
+    const hasActiveRunningPrompt = useQueueStore.getState().running.some((item) =>
+      activePromptIdSet.has(item.prompt_id));
+    if (hasActiveRunningPrompt) {
+      try {
+        await api.interruptExecution();
+      } catch (error: unknown) {
+        failures.push(errorMessage(error, 'Failed to interrupt running generation.'));
+      }
+    }
+  }
+
+  if (!(await queue.fetchQueue())) {
+    failures.push('Failed to refresh the queue after cancelling.');
+  }
+  if (failures.length > 0) {
+    throw new Error(failures.join(' '));
+  }
+}
+
 /** Shared state for the Simple Generation form and its BottomBar action. */
 export const useSimpleGenerationStore = create<SimpleGenerationState>((set, get) => ({
   ...initialContext,
   isGenerating: false,
   isCancelling: false,
+  cancelRequested: false,
   activePromptIds: [],
   error: null,
   setContext: (context) => set(context),
   setError: (error) => set({ error }),
-  clearFinishedPromptIds: (promptIds) => set({ activePromptIds: [...new Set(promptIds)] }),
   openLatestImage: () => {
     const images = buildOutputPreferredViewerImages(
       useHistoryStore.getState().history,
@@ -126,11 +179,19 @@ export const useSimpleGenerationStore = create<SimpleGenerationState>((set, get)
       return false;
     }
 
-    set({ isGenerating: true, error: null });
+    set({
+      isGenerating: true,
+      isCancelling: false,
+      cancelRequested: false,
+      activePromptIds: [],
+      error: null,
+    });
     try {
       const queue = useQueueStore.getState();
       const batchCount = boundedBatchCount(form.batchCount);
       for (let batchIndex = 0; batchIndex < batchCount; batchIndex += 1) {
+        if (get().cancelRequested) break;
+
         const resolvedSeed = resolveBatchSeed(form, batchIndex);
         const executionWorkflow = applyGenerationFormToWorkflow(
           form,
@@ -162,11 +223,41 @@ export const useSimpleGenerationStore = create<SimpleGenerationState>((set, get)
           clientId: api.clientId,
         }).catch(() => {});
         form.patch({ seed: resolvedSeed });
+
+        if (get().cancelRequested) break;
       }
-      void queue.fetchQueue();
+
+      if (get().cancelRequested) {
+        await cancelTrackedPromptIds(get().activePromptIds);
+        set({
+          activePromptIds: [],
+          isCancelling: false,
+          cancelRequested: false,
+        });
+        return false;
+      }
+
+      const refreshedQueue = await queue.fetchQueue();
+      if (get().cancelRequested) {
+        await cancelTrackedPromptIds(get().activePromptIds);
+        set({
+          activePromptIds: [],
+          isCancelling: false,
+          cancelRequested: false,
+        });
+        return false;
+      }
+
+      if (!refreshedQueue) {
+        throw new Error('Failed to refresh the queue after queuing generation.');
+      }
       return true;
     } catch (error: unknown) {
-      set({ error: errorMessage(error, 'Failed to queue generation.') });
+      set({
+        error: errorMessage(error, 'Failed to queue generation.'),
+        isCancelling: false,
+        cancelRequested: false,
+      });
       return false;
     } finally {
       set({ isGenerating: false });
@@ -174,63 +265,29 @@ export const useSimpleGenerationStore = create<SimpleGenerationState>((set, get)
   },
   cancelGeneration: async () => {
     const state = get();
-    if (state.isGenerating || state.isCancelling || state.activePromptIds.length === 0) {
+    if (state.isCancelling) return false;
+
+    if (state.isGenerating) {
+      set({ cancelRequested: true, isCancelling: true, error: null });
+      return true;
+    }
+
+    if (state.activePromptIds.length === 0) {
       return false;
     }
 
     const activePromptIds = [...state.activePromptIds];
     set({ isCancelling: true, error: null });
-    const queue = useQueueStore.getState();
     try {
-      if (!(await queue.fetchQueue())) {
-        throw new Error('Failed to refresh the queue before cancelling.');
-      }
-
-      const pendingIds = new Set(
-        useQueueStore.getState().pending
-          .map((item) => item.prompt_id)
-          .filter((promptId) => activePromptIds.includes(promptId)),
-      );
-      const failures: string[] = [];
-      const deleteResults = await Promise.allSettled(
-        [...pendingIds].map((promptId) => api.deleteQueueItem(promptId)),
-      );
-      deleteResults.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          const promptId = [...pendingIds][index] ?? 'pending prompt';
-          failures.push(`${promptId}: ${errorMessage(result.reason, 'Failed to cancel queued generation.')}`);
-        }
-      });
-
-      // Refresh after pending deletions: a prompt can move from pending to
-      // running while the delete requests are in flight. Only interrupt when
-      // the latest queue snapshot still contains one of our prompt IDs.
-      const refreshedAfterDeletes = await queue.fetchQueue();
-      if (!refreshedAfterDeletes) {
-        failures.push('Failed to refresh the queue before interrupting.');
-      } else {
-        const hasActiveRunningPrompt = useQueueStore.getState().running.some((item) =>
-          activePromptIds.includes(item.prompt_id));
-        if (hasActiveRunningPrompt) {
-          try {
-            await api.interruptExecution();
-          } catch (error: unknown) {
-            failures.push(errorMessage(error, 'Failed to interrupt running generation.'));
-          }
-        }
-      }
-
-      if (!(await queue.fetchQueue())) {
-        failures.push('Failed to refresh the queue after cancelling.');
-      }
-      if (failures.length > 0) {
-        throw new Error(failures.join(' '));
-      }
-
-      set({ activePromptIds: [], isCancelling: false });
+      await cancelTrackedPromptIds(activePromptIds);
+      set({ activePromptIds: [], isCancelling: false, cancelRequested: false });
       return true;
     } catch (error: unknown) {
-      set({ isCancelling: false, error: errorMessage(error, 'Failed to cancel generation.') });
+      set({
+        isCancelling: false,
+        cancelRequested: false,
+        error: errorMessage(error, 'Failed to cancel generation.'),
+      });
       return false;
     }
   },
@@ -245,36 +302,13 @@ export function useSimpleGeneration() {
   const checkpointsStatus = useSimpleGenerationStore((state) => state.checkpointsStatus);
   const isGenerating = useSimpleGenerationStore((state) => state.isGenerating);
   const isCancelling = useSimpleGenerationStore((state) => state.isCancelling);
+  const cancelRequested = useSimpleGenerationStore((state) => state.cancelRequested);
   const activePromptIds = useSimpleGenerationStore((state) => state.activePromptIds);
   const error = useSimpleGenerationStore((state) => state.error);
   const generate = useSimpleGenerationStore((state) => state.generate);
   const cancelGeneration = useSimpleGenerationStore((state) => state.cancelGeneration);
-  const clearFinishedPromptIds = useSimpleGenerationStore((state) => state.clearFinishedPromptIds);
   const openLatestImage = useSimpleGenerationStore((state) => state.openLatestImage);
   const history = useHistoryStore((state) => state.history);
-  const pending = useQueueStore((state) => state.pending);
-  const running = useQueueStore((state) => state.running);
-  const isQueueLoading = useQueueStore((state) => state.isLoading);
-
-  useEffect(() => {
-    if (activePromptIds.length === 0 || isGenerating || isCancelling || isQueueLoading) return;
-    const livePromptIds = new Set([
-      ...pending.map((item) => item.prompt_id),
-      ...running.map((item) => item.prompt_id),
-    ]);
-    const unfinishedPromptIds = activePromptIds.filter((promptId) => livePromptIds.has(promptId));
-    if (unfinishedPromptIds.length !== activePromptIds.length) {
-      clearFinishedPromptIds(unfinishedPromptIds);
-    }
-  }, [
-    activePromptIds,
-    clearFinishedPromptIds,
-    isCancelling,
-    isGenerating,
-    isQueueLoading,
-    pending,
-    running,
-  ]);
 
   const validationErrors = validateGenerationForm(
     form,
@@ -294,6 +328,7 @@ export function useSimpleGeneration() {
     canGenerate,
     isGenerating,
     isCancelling,
+    cancelRequested,
     activePromptIds,
     error,
     hasLatestImage,

@@ -70,4 +70,17 @@ describe('BatchSettings', () => {
     expect(cancelButton?.textContent).toBe('Cancelling…');
     expect(cancelButton?.disabled).toBe(true);
   });
+
+  it('keeps cancellation available while the batch is still being enqueued', async () => {
+    simpleGenerationState.isGenerating = true;
+
+    await act(async () => root.render(<BatchSettings />));
+
+    const cancelButton = container.querySelector('[data-testid="cancel-generation-button"]') as HTMLButtonElement | null;
+    expect(cancelButton?.textContent).toBe('Cancel generation');
+    expect(cancelButton?.disabled).toBe(false);
+
+    await act(async () => cancelButton?.click());
+    expect(simpleGenerationState.cancelGeneration).toHaveBeenCalledTimes(1);
+  });
 });
