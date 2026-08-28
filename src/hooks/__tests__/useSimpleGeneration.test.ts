@@ -70,8 +70,8 @@ vi.mock('@/hooks/useWorkflow', () => ({
 import { useSimpleGeneration, useSimpleGenerationStore } from '../useSimpleGeneration';
 
 function SimpleGenerationProbe() {
-  useSimpleGeneration();
-  return null;
+  const state = useSimpleGeneration();
+  return createElement('output', { 'data-can-generate': String(state.canGenerate) });
 }
 
 const emptyWorkflow: Workflow = {
@@ -117,6 +117,7 @@ describe('useSimpleGeneration shared submit state', () => {
       isGenerating: false,
       isCancelling: false,
       cancelRequested: false,
+      cancellationBlocked: false,
       activePromptIds: [],
       error: null,
     });
@@ -125,8 +126,13 @@ describe('useSimpleGeneration shared submit state', () => {
     workflowMocks.setFollowQueue.mockReset();
     apiMocks.queuePrompt.mockReset().mockResolvedValue({ prompt_id: 'prompt-1', number: 7 });
     apiMocks.upsertQueuePromptMetadata.mockReset().mockResolvedValue(undefined);
-    apiMocks.deleteQueueItem.mockReset().mockResolvedValue(undefined);
-    apiMocks.interruptExecution.mockReset().mockResolvedValue(undefined);
+    apiMocks.deleteQueueItem.mockReset().mockImplementation(async (promptId: string) => {
+      queueMocks.pending = queueMocks.pending.filter((item) => item.prompt_id !== promptId);
+    });
+    apiMocks.interruptExecution.mockReset().mockImplementation(async () => {
+      const active = new Set(useSimpleGenerationStore.getState().activePromptIds);
+      queueMocks.running = queueMocks.running.filter((item) => !active.has(item.prompt_id));
+    });
     seedMocks.resolveGenerationSeed.mockReset().mockReturnValue(123);
     queueMocks.registerLocalPrompt.mockReset();
     queueMocks.recordQueuedPrompt.mockReset();
@@ -286,6 +292,34 @@ describe('useSimpleGeneration shared submit state', () => {
     expect(useSimpleGenerationStore.getState().error).toBe('Choose a checkpoint before generating.');
   });
 
+  it('disables Generate while cancellation is active and re-enables it after confirmation', async () => {
+    useGenerationForm.getState().patch({ checkpoint: 'models/checkpoint.safetensors' });
+    useSimpleGenerationStore.getState().setContext({
+      baseWorkflow: emptyWorkflow,
+      nodeTypes: {},
+      checkpoints: ['models/checkpoint.safetensors'],
+      checkpointsStatus: 'loaded',
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+
+    try {
+      useSimpleGenerationStore.setState({ isCancelling: true });
+      await act(async () => root.render(createElement(SimpleGenerationProbe)));
+      expect(container.querySelector('output')?.getAttribute('data-can-generate')).toBe('false');
+
+      await act(async () => {
+        useSimpleGenerationStore.setState({ isCancelling: false, cancellationBlocked: false });
+        root.render(createElement(SimpleGenerationProbe));
+      });
+      expect(container.querySelector('output')?.getAttribute('data-can-generate')).toBe('true');
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
   it('opens the newest history image in the shared viewer without changing panels', () => {
     historyMocks.history.push({
       prompt_id: 'prompt-latest',
@@ -328,6 +362,82 @@ describe('useSimpleGeneration shared submit state', () => {
     expect(apiMocks.interruptExecution).not.toHaveBeenCalled();
     expect(useSimpleGenerationStore.getState().activePromptIds).toEqual([]);
     expect(useSimpleGenerationStore.getState().isCancelling).toBe(false);
+  });
+
+  it('keeps tracked ids until a later queue poll confirms the backend stopped them', async () => {
+    useSimpleGenerationStore.setState({ activePromptIds: ['simple-running'] });
+    let refreshCount = 0;
+    queueMocks.fetchQueue.mockImplementation(async () => {
+      refreshCount += 1;
+      if (refreshCount === 1) {
+        queueMocks.pending = [{ prompt_id: 'simple-running' }];
+        queueMocks.running = [];
+      } else if (refreshCount === 2) {
+        // The delete acknowledgement raced with execution; the next snapshot
+        // proves that this prompt is now running.
+        queueMocks.pending = [];
+        queueMocks.running = [{ prompt_id: 'simple-running' }];
+      } else {
+        queueMocks.pending = [];
+        queueMocks.running = [];
+      }
+      return true;
+    });
+
+    await expect(useSimpleGenerationStore.getState().cancelGeneration()).resolves.toBe(true);
+
+    expect(refreshCount).toBe(3);
+    expect(apiMocks.interruptExecution).toHaveBeenCalledTimes(1);
+    expect(useSimpleGenerationStore.getState().activePromptIds).toEqual([]);
+    expect(useSimpleGenerationStore.getState().cancellationBlocked).toBe(false);
+  });
+
+  it('retains ids and blocks a new Generate when cancellation times out', async () => {
+    vi.useFakeTimers();
+    try {
+      useSimpleGenerationStore.setState({ activePromptIds: ['simple-stuck'] });
+      queueMocks.pending = [{ prompt_id: 'simple-stuck' }];
+      apiMocks.deleteQueueItem.mockReset().mockResolvedValue(undefined);
+      queueMocks.fetchQueue.mockImplementation(async () => {
+        queueMocks.pending = [{ prompt_id: 'simple-stuck' }];
+        queueMocks.running = [];
+        return true;
+      });
+
+      const cancellation = useSimpleGenerationStore.getState().cancelGeneration();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      await expect(cancellation).resolves.toBe(false);
+      expect(useSimpleGenerationStore.getState().activePromptIds).toEqual(['simple-stuck']);
+      expect(useSimpleGenerationStore.getState().cancellationBlocked).toBe(true);
+      expect(useSimpleGenerationStore.getState().error)
+        .toBe('Generation is still stopping. Please wait and try again.');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not clear tracked ids when a backend delete request fails', async () => {
+    useSimpleGenerationStore.setState({ activePromptIds: ['simple-delete-failed'] });
+    queueMocks.pending = [{ prompt_id: 'simple-delete-failed' }];
+    apiMocks.deleteQueueItem.mockReset().mockRejectedValue(new Error('Failed to delete queue item'));
+
+    await expect(useSimpleGenerationStore.getState().cancelGeneration()).resolves.toBe(false);
+
+    expect(useSimpleGenerationStore.getState().activePromptIds).toEqual(['simple-delete-failed']);
+    expect(useSimpleGenerationStore.getState().cancellationBlocked).toBe(true);
+    expect(apiMocks.interruptExecution).not.toHaveBeenCalled();
+  });
+
+  it('does not report cancellation success when interrupting returns an error', async () => {
+    useSimpleGenerationStore.setState({ activePromptIds: ['simple-interrupt-failed'] });
+    queueMocks.running = [{ prompt_id: 'simple-interrupt-failed' }];
+    apiMocks.interruptExecution.mockReset().mockRejectedValue(new Error('Failed to interrupt execution'));
+
+    await expect(useSimpleGenerationStore.getState().cancelGeneration()).resolves.toBe(false);
+
+    expect(useSimpleGenerationStore.getState().activePromptIds).toEqual(['simple-interrupt-failed']);
+    expect(useSimpleGenerationStore.getState().cancellationBlocked).toBe(true);
   });
 
   it('stops remaining batch enqueue work when cancellation is requested mid-batch', async () => {

@@ -60,23 +60,26 @@ export async function getHistoryCount(): Promise<number | null> {
 }
 
 export async function interruptExecution(): Promise<void> {
-  await fetch(`/api/interrupt`, { method: 'POST' });
+  const response = await fetch(`/api/interrupt`, { method: 'POST' });
+  if (!response.ok) throw new Error('Failed to interrupt execution');
 }
 
 export async function clearQueue(): Promise<void> {
-  await fetch(`/api/queue`, {
+  const response = await fetch(`/api/queue`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ clear: true })
   });
+  if (!response.ok) throw new Error('Failed to clear queue');
 }
 
 export async function deleteQueueItem(promptId: string): Promise<void> {
-  await fetch(`/api/queue`, {
+  const response = await fetch(`/api/queue`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ delete: [promptId] })
   });
+  if (!response.ok) throw new Error('Failed to delete queue item');
 }
 
 export interface PromptQueueRequest {

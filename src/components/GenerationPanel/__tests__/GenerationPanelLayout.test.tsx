@@ -1,7 +1,8 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useGenerationForm } from '@/hooks/useGenerationForm';
+import { useGenerationForm, type LoraSlots } from '@/hooks/useGenerationForm';
+import { useNavigationStore } from '@/hooks/useNavigation';
 
 vi.mock('@/hooks/useCheckpoints', () => ({
   useCheckpoints: () => ({
@@ -63,5 +64,67 @@ describe('GenerationPanel fixed UI layout', () => {
       return Array.from(container.querySelectorAll('[data-testid]')).indexOf(element as HTMLElement);
     });
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  });
+
+  it('keeps all generation values across an Outputs navigation and remount', async () => {
+    useNavigationStore.setState({ currentPanel: 'generation' });
+    useGenerationForm.getState().patch({
+      checkpoint: 'restored/missing.safetensors',
+      positivePrompt: 'portrait, detailed lighting',
+      negativePrompt: 'blurry',
+      width: 768,
+      height: 1024,
+      seedMode: 'fixed',
+      seed: 9876,
+      steps: 32,
+      cfg: 6.25,
+      batchSize: 4,
+      batchCount: 6,
+      hiresEnabled: true,
+      hiresMode: 'resize',
+      hiresScale: 2,
+      faceDetailerEnabled: true,
+      faceSteps: 13,
+      upscaleEnabled: true,
+      upscaleModel: 'restored-upscaler.pth',
+      loras: [
+        { enabled: true, name: 'restored/style.safetensors', strengthModel: 0.8, strengthClip: 0.9 },
+        useGenerationForm.getState().loras[1],
+        useGenerationForm.getState().loras[2],
+      ] as LoraSlots,
+    });
+
+    await act(async () => root.render(<GenerationPanel visible />));
+    useNavigationStore.getState().setCurrentPanel('outputs');
+    await act(async () => root.render(null));
+    useNavigationStore.getState().setCurrentPanel('generation');
+    await act(async () => root.render(<GenerationPanel visible />));
+
+    expect(useGenerationForm.getState()).toMatchObject({
+      checkpoint: 'restored/missing.safetensors',
+      positivePrompt: 'portrait, detailed lighting',
+      negativePrompt: 'blurry',
+      width: 768,
+      height: 1024,
+      seedMode: 'fixed',
+      seed: 9876,
+      steps: 32,
+      cfg: 6.25,
+      batchSize: 4,
+      batchCount: 6,
+      hiresEnabled: true,
+      hiresMode: 'resize',
+      hiresScale: 2,
+      faceDetailerEnabled: true,
+      faceSteps: 13,
+      upscaleEnabled: true,
+      upscaleModel: 'restored-upscaler.pth',
+    });
+    expect(useGenerationForm.getState().loras[0]).toEqual({
+      enabled: true,
+      name: 'restored/style.safetensors',
+      strengthModel: 0.8,
+      strengthClip: 0.9,
+    });
   });
 });

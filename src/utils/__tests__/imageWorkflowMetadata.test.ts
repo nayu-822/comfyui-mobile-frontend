@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  extractGenerationMetadataFromImageBytes,
   extractWorkflowFromImageBytes,
   isWorkflowImageFile,
 } from '../imageWorkflowMetadata';
+import { deflateSync } from 'node:zlib';
 
 const SAMPLE_WORKFLOW = JSON.stringify({
   nodes: [{ id: 1, type: 'KSampler' }],
@@ -34,6 +36,23 @@ function makePng(textChunks: Array<{ keyword: string; text: string }>): Uint8Arr
   return Uint8Array.from([...sig, ...body]);
 }
 
+function makePngWithRawChunks(chunks: Array<{ type: string; data: number[] }>): Uint8Array {
+  const sig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  return Uint8Array.from([
+    ...sig,
+    ...chunks.flatMap(({ type, data }) => pngChunk(type, data)),
+    ...pngChunk('IEND', []),
+  ]);
+}
+
+function makeCompressedPng(keyword: string, text: string, type: 'zTXt' | 'iTXt'): Uint8Array {
+  const compressed = Array.from(deflateSync(Buffer.from(text, 'utf8')));
+  const data = type === 'zTXt'
+    ? [...ascii(keyword), 0, 0, ...compressed]
+    : [...ascii(keyword), 0, 1, 0, 0, 0, ...compressed];
+  return makePngWithRawChunks([{ type, data }]);
+}
+
 // --- EXIF (TIFF, little-endian) builder, used by webp + jpeg -------------
 function makeExifWithMake(value: string): number[] {
   return makeExifWithMakeBytes(ascii(value));
@@ -53,6 +72,26 @@ function makeExifWithMakeBytes(valueBytes: number[]): number[] {
     ...u32(0), // no next IFD
     ...str, // value at offset 26
   ];
+}
+
+function makeExifTags(tags: Array<{ tag: number; value: string }>): number[] {
+  const u16 = (n: number) => [n & 0xff, (n >> 8) & 0xff];
+  const u32 = (n: number) => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >> 24) & 0xff];
+  const entriesOffset = 8;
+  const dataOffset = entriesOffset + 2 + tags.length * 12 + 4;
+  const values = tags.map(({ value }) => [...new TextEncoder().encode(value), 0]);
+  const entries: number[] = [
+    ...ascii('II'), ...u16(0x2a), ...u32(entriesOffset),
+    ...u16(tags.length),
+  ];
+  let valueOffset = dataOffset;
+  tags.forEach(({ tag }, index) => {
+    const value = values[index] ?? [0];
+    entries.push(...u16(tag), ...u16(2), ...u32(value.length), ...u32(valueOffset));
+    valueOffset += value.length;
+  });
+  entries.push(...u32(0), ...values.flat());
+  return entries;
 }
 
 function makeWebp(exif: number[]): Uint8Array {
@@ -148,5 +187,77 @@ describe('extractWorkflowFromImageBytes', () => {
 
   it('returns null for non-image bytes', () => {
     expect(extractWorkflowFromImageBytes(Uint8Array.from(ascii('just text')))).toBeNull();
+  });
+
+  it('reads uncompressed iTXt and zTXt workflow metadata', async () => {
+    const iTxt = makePngWithRawChunks([{
+      type: 'iTXt',
+      data: [...ascii('workflow'), 0, 0, 0, 0, 0, ...ascii(SAMPLE_WORKFLOW)],
+    }]);
+    const zTxt = makeCompressedPng('workflow', SAMPLE_WORKFLOW, 'zTXt');
+    const compressedITxt = makeCompressedPng('workflow', SAMPLE_WORKFLOW, 'iTXt');
+
+    expect(extractWorkflowFromImageBytes(zTxt)?.nodes).toHaveLength(1);
+    expect(extractWorkflowFromImageBytes(compressedITxt)?.nodes).toHaveLength(1);
+
+    await expect(extractGenerationMetadataFromImageBytes(iTxt)).resolves.toMatchObject({
+      found: true,
+      malformed: false,
+      workflow: expect.objectContaining({ nodes: expect.any(Array) }),
+    });
+    await expect(extractGenerationMetadataFromImageBytes(zTxt)).resolves.toMatchObject({
+      found: true,
+      malformed: false,
+      workflow: expect.objectContaining({ nodes: expect.any(Array) }),
+    });
+    await expect(extractGenerationMetadataFromImageBytes(compressedITxt)).resolves.toMatchObject({
+      found: true,
+      malformed: false,
+      workflow: expect.objectContaining({ nodes: expect.any(Array) }),
+    });
+  });
+
+  it('falls back to PNG prompt metadata when workflow is absent', async () => {
+    const prompt = JSON.stringify({ '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'missing.safetensors' } } });
+    const png = makePng([{ keyword: 'prompt', text: prompt }]);
+
+    const metadata = await extractGenerationMetadataFromImageBytes(png);
+    expect(metadata.workflow).toBeNull();
+    expect(metadata.prompt).toEqual(JSON.parse(prompt));
+    expect(metadata.found).toBe(true);
+  });
+
+  it('distinguishes absent metadata from malformed metadata', async () => {
+    const empty = await extractGenerationMetadataFromImageBytes(makePng([]));
+    const malformed = await extractGenerationMetadataFromImageBytes(
+      makePng([{ keyword: 'workflow', text: '{broken' }]),
+    );
+
+    expect(empty).toEqual({ workflow: null, prompt: null, found: false, malformed: false });
+    expect(malformed).toMatchObject({ workflow: null, found: true, malformed: true });
+  });
+
+  it('reads workflow from Make and prompt from Model in WebP EXIF', async () => {
+    const prompt = JSON.stringify({ '1': { class_type: 'CheckpointLoaderSimple', inputs: {} } });
+    const webp = makeWebp(makeExifTags([
+      { tag: 0x010f, value: `workflow:${SAMPLE_WORKFLOW}` },
+      { tag: 0x0110, value: `prompt:${prompt}` },
+    ]));
+
+    await expect(extractGenerationMetadataFromImageBytes(webp)).resolves.toMatchObject({
+      workflow: expect.objectContaining({ nodes: expect.any(Array) }),
+      prompt: JSON.parse(prompt),
+      found: true,
+    });
+  });
+
+  it('reads prompt-only Model EXIF from JPEG', async () => {
+    const prompt = JSON.stringify({ '1': { class_type: 'CLIPTextEncode', inputs: { text: 'restore me' } } });
+    const jpeg = makeJpeg(makeExifTags([{ tag: 0x0110, value: `prompt:${prompt}` }]));
+
+    const metadata = await extractGenerationMetadataFromImageBytes(jpeg);
+    expect(metadata.workflow).toBeNull();
+    expect(metadata.prompt).toEqual(JSON.parse(prompt));
+    expect(extractWorkflowFromImageBytes(jpeg)).toBeNull();
   });
 });

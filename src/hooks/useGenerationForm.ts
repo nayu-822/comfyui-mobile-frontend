@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 export type LoraSlot = {
   enabled: boolean;
@@ -111,20 +112,69 @@ interface GenerationFormActions {
 
 export type GenerationFormStore = GenerationFormState & GenerationFormActions;
 
+function persistedGenerationFormState(state: GenerationFormStore): GenerationFormState {
+  return {
+    checkpoint: state.checkpoint,
+    positivePrompt: state.positivePrompt,
+    negativePrompt: state.negativePrompt,
+    width: state.width,
+    height: state.height,
+    batchSize: state.batchSize,
+    batchCount: state.batchCount,
+    seedMode: state.seedMode,
+    seed: state.seed,
+    steps: state.steps,
+    cfg: state.cfg,
+    sampler: state.sampler,
+    scheduler: state.scheduler,
+    loras: state.loras.map((slot) => ({ ...slot })) as LoraSlots,
+    hiresEnabled: state.hiresEnabled,
+    faceDetailerEnabled: state.faceDetailerEnabled,
+    upscaleEnabled: state.upscaleEnabled,
+    hiresMode: state.hiresMode,
+    resizeMethod: state.resizeMethod,
+    hiresScale: state.hiresScale,
+    hiresSteps: state.hiresSteps,
+    hiresCfg: state.hiresCfg,
+    hiresDenoise: state.hiresDenoise,
+    hiresSampler: state.hiresSampler,
+    hiresScheduler: state.hiresScheduler,
+    faceGuideSize: state.faceGuideSize,
+    faceMaxSize: state.faceMaxSize,
+    faceSteps: state.faceSteps,
+    faceCfg: state.faceCfg,
+    faceDenoise: state.faceDenoise,
+    faceBBoxThreshold: state.faceBBoxThreshold,
+    upscaleModel: state.upscaleModel,
+  };
+}
+
 /** State for the mobile-first generation form. It intentionally has no workflow graph data. */
-export const useGenerationForm = create<GenerationFormStore>((set) => ({
-  ...cloneDefaultState(),
-  setField: (field, value) => set({ [field]: value } as Partial<GenerationFormState>),
-  setLora: (index, patch) => set((state) => {
-    const loras = [...state.loras] as LoraSlots;
-    loras[index] = { ...loras[index], ...patch };
-    return { loras };
-  }),
-  patch: (values) => set((state) => ({
-    ...values,
-    ...(values.loras
-      ? { loras: values.loras.map((slot) => ({ ...slot })) as LoraSlots }
-      : { loras: state.loras }),
-  })),
-  reset: () => set(cloneDefaultState()),
-}));
+export const useGenerationForm = create<GenerationFormStore>()(
+  persist(
+    (set) => ({
+      ...cloneDefaultState(),
+      setField: (field, value) => set({ [field]: value } as Partial<GenerationFormState>),
+      setLora: (index, patch) => set((state) => {
+        const loras = [...state.loras] as LoraSlots;
+        loras[index] = { ...loras[index], ...patch };
+        return { loras };
+      }),
+      patch: (values) => set((state) => ({
+        ...values,
+        ...(values.loras
+          ? { loras: values.loras.map((slot) => ({ ...slot })) as LoraSlots }
+          : { loras: state.loras }),
+      })),
+      reset: () => set(cloneDefaultState()),
+    }),
+    {
+      name: 'simple-generation-form-storage',
+      // Generation settings should survive SPA panel navigation and a
+      // component remount, but remain session-local rather than becoming a
+      // long-lived user preference.
+      storage: createJSONStorage(() => sessionStorage),
+      partialize: persistedGenerationFormState,
+    },
+  ),
+);

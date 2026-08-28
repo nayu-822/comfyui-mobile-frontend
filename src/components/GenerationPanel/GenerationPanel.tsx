@@ -10,7 +10,10 @@ import defaultWorkflowAsset from '@/workflows/mobile_sdxl_default.json';
 import { generationParamsFromWorkflow } from '@/utils/generationParamsFromWorkflow';
 import { validateGenerationForm } from '@/utils/generationFormValidation';
 import { getCheckpointAutoSelection } from '@/utils/checkpointSelection';
-import { extractWorkflowFromImageFile } from '@/utils/imageWorkflowMetadata';
+import {
+  extractGenerationMetadataFromImageFile,
+} from '@/utils/imageWorkflowMetadata';
+import { generationParamsFromPrompt } from '@/utils/generationParamsFromPrompt';
 import { BasicSettings } from './BasicSettings';
 import { FeatureToggles } from './FeatureToggles';
 import { AdvancedSettings } from './AdvancedSettings';
@@ -81,12 +84,24 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
     event.currentTarget.value = '';
     if (!file) return;
     try {
-      const workflow = await extractWorkflowFromImageFile(file);
-      if (!workflow) {
-        setError('No embedded ComfyUI workflow was found in that image.');
+      const metadata = await extractGenerationMetadataFromImageFile(file);
+      if (!metadata.found) {
+        setError('No embedded ComfyUI generation metadata was found in that image.');
         return;
       }
-      const patch = generationParamsFromWorkflow(workflow);
+      // A valid canvas workflow is authoritative. Prompt metadata is only a
+      // fallback for images whose writer omitted the workflow graph.
+      const patch = metadata.workflow
+        ? generationParamsFromWorkflow(metadata.workflow)
+        : metadata.prompt
+          ? generationParamsFromPrompt(metadata.prompt)
+          : {};
+      if (Object.keys(patch).length === 0) {
+        setError(metadata.malformed
+          ? 'Unsupported or malformed ComfyUI metadata.'
+          : 'The embedded ComfyUI metadata contains no supported generation parameters.');
+        return;
+      }
       if (patch.checkpoint !== undefined) setRestoredCheckpointValue(patch.checkpoint);
       form.patch(patch);
       setError(null);

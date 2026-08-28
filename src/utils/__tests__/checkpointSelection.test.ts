@@ -12,6 +12,14 @@ describe('getCheckpointAutoSelection', () => {
     })).toBeUndefined();
   });
 
+  it('preserves an explicit missing checkpoint after a component remount', () => {
+    expect(getCheckpointAutoSelection({
+      currentCheckpoint: 'restored/missing.safetensors',
+      restoredCheckpointValue: null,
+      checkpoints,
+    })).toBeUndefined();
+  });
+
   it('does not treat a manually selected listed checkpoint as restored', () => {
     expect(getCheckpointAutoSelection({
       currentCheckpoint: 'models/b.safetensors',
