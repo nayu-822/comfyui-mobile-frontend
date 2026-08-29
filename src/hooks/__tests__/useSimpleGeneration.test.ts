@@ -9,6 +9,7 @@ const apiMocks = vi.hoisted(() => ({
   clientId: 'test-client',
   queuePrompt: vi.fn(),
   upsertQueuePromptMetadata: vi.fn(),
+  promptHasHistory: vi.fn(),
   deleteQueueItem: vi.fn(),
   interruptExecution: vi.fn(),
   getImageUrl: vi.fn((filename: string) => `/view/${filename}`),
@@ -126,6 +127,7 @@ describe('useSimpleGeneration shared submit state', () => {
     workflowMocks.setFollowQueue.mockReset();
     apiMocks.queuePrompt.mockReset().mockResolvedValue({ prompt_id: 'prompt-1', number: 7 });
     apiMocks.upsertQueuePromptMetadata.mockReset().mockResolvedValue(undefined);
+    apiMocks.promptHasHistory.mockReset().mockResolvedValue(false);
     apiMocks.deleteQueueItem.mockReset().mockImplementation(async (promptId: string) => {
       queueMocks.pending = queueMocks.pending.filter((item) => item.prompt_id !== promptId);
     });
@@ -172,6 +174,36 @@ describe('useSimpleGeneration shared submit state', () => {
     expect(useSimpleGenerationStore.getState().isGenerating).toBe(false);
     expect(useSimpleGenerationStore.getState().activePromptIds).toEqual(['prompt-1']);
     expect(useSimpleGenerationStore.getState().error).toBeNull();
+  });
+
+  it('accumulates active prompt ids across sequential generates', async () => {
+    useGenerationForm.getState().patch({
+      checkpoint: 'models/checkpoint.safetensors',
+      seedMode: 'fixed',
+      seed: 42,
+    });
+    useSimpleGenerationStore.getState().setContext({
+      baseWorkflow: emptyWorkflow,
+      nodeTypes: {},
+      checkpoints: ['models/checkpoint.safetensors'],
+      checkpointsStatus: 'loaded',
+    });
+
+    apiMocks.queuePrompt.mockReset()
+      .mockResolvedValueOnce({ prompt_id: 'prompt-a', number: 1 })
+      .mockResolvedValueOnce({ prompt_id: 'prompt-b', number: 2 });
+    queueMocks.pending = [{ prompt_id: 'prompt-a' }];
+
+    await expect(useSimpleGenerationStore.getState().generate()).resolves.toBe(true);
+    expect(useSimpleGenerationStore.getState().activePromptIds).toEqual(['prompt-a']);
+
+    queueMocks.pending = [
+      { prompt_id: 'prompt-a' },
+      { prompt_id: 'prompt-b' },
+    ];
+    await expect(useSimpleGenerationStore.getState().generate()).resolves.toBe(true);
+
+    expect(useSimpleGenerationStore.getState().activePromptIds).toEqual(['prompt-a', 'prompt-b']);
   });
 
   it('keeps active prompt ids while the post-enqueue queue refresh is pending', async () => {
@@ -364,6 +396,45 @@ describe('useSimpleGeneration shared submit state', () => {
     expect(useSimpleGenerationStore.getState().isCancelling).toBe(false);
   });
 
+  it('cancels every tracked pending prompt while leaving another workflow untouched', async () => {
+    useSimpleGenerationStore.setState({ activePromptIds: ['simple-a', 'simple-b'] });
+    queueMocks.pending = [
+      { prompt_id: 'simple-a' },
+      { prompt_id: 'simple-b' },
+      { prompt_id: 'other-pending' },
+    ];
+    queueMocks.running = [{ prompt_id: 'other-running' }];
+
+    await expect(useSimpleGenerationStore.getState().cancelGeneration()).resolves.toBe(true);
+
+    expect(apiMocks.deleteQueueItem).toHaveBeenCalledTimes(2);
+    expect(apiMocks.deleteQueueItem).toHaveBeenCalledWith('simple-a');
+    expect(apiMocks.deleteQueueItem).toHaveBeenCalledWith('simple-b');
+    expect(apiMocks.deleteQueueItem).not.toHaveBeenCalledWith('other-pending');
+    expect(apiMocks.interruptExecution).not.toHaveBeenCalled();
+    expect(useSimpleGenerationStore.getState().activePromptIds).toEqual([]);
+  });
+
+  it('deletes tracked pending prompts and interrupts tracked running prompts only', async () => {
+    useSimpleGenerationStore.setState({ activePromptIds: ['simple-running', 'simple-pending'] });
+    queueMocks.pending = [
+      { prompt_id: 'simple-pending' },
+      { prompt_id: 'other-pending' },
+    ];
+    queueMocks.running = [
+      { prompt_id: 'simple-running' },
+      { prompt_id: 'other-running' },
+    ];
+
+    await expect(useSimpleGenerationStore.getState().cancelGeneration()).resolves.toBe(true);
+
+    expect(apiMocks.deleteQueueItem).toHaveBeenCalledTimes(1);
+    expect(apiMocks.deleteQueueItem).toHaveBeenCalledWith('simple-pending');
+    expect(apiMocks.deleteQueueItem).not.toHaveBeenCalledWith('other-pending');
+    expect(apiMocks.interruptExecution).toHaveBeenCalledTimes(1);
+    expect(useSimpleGenerationStore.getState().activePromptIds).toEqual([]);
+  });
+
   it('keeps tracked ids until a later queue poll confirms the backend stopped them', async () => {
     useSimpleGenerationStore.setState({ activePromptIds: ['simple-running'] });
     let refreshCount = 0;
@@ -438,6 +509,49 @@ describe('useSimpleGeneration shared submit state', () => {
 
     expect(useSimpleGenerationStore.getState().activePromptIds).toEqual(['simple-interrupt-failed']);
     expect(useSimpleGenerationStore.getState().cancellationBlocked).toBe(true);
+  });
+
+  it('untracks only prompts confirmed in history and keeps the others', async () => {
+    useSimpleGenerationStore.setState({ activePromptIds: ['simple-complete', 'simple-pending'] });
+    historyMocks.history = [{
+      prompt_id: 'simple-complete',
+      timestamp: 1,
+      outputs: { images: [] },
+      prompt: {},
+    }];
+    queueMocks.pending = [{ prompt_id: 'simple-pending' }];
+
+    await useSimpleGenerationStore.getState().reconcileCompletedPromptIds();
+
+    expect(useSimpleGenerationStore.getState().activePromptIds).toEqual(['simple-pending']);
+    expect(apiMocks.promptHasHistory).not.toHaveBeenCalledWith('simple-complete');
+  });
+
+  it('uses per-prompt backend history when the completed item is outside the loaded window', async () => {
+    useSimpleGenerationStore.setState({ activePromptIds: ['simple-complete', 'simple-pending'] });
+    apiMocks.promptHasHistory.mockImplementation(async (promptId: string) => (
+      promptId === 'simple-complete'
+    ));
+
+    await useSimpleGenerationStore.getState().reconcileCompletedPromptIds();
+
+    expect(apiMocks.promptHasHistory).toHaveBeenCalledWith('simple-complete');
+    expect(apiMocks.promptHasHistory).toHaveBeenCalledWith('simple-pending');
+    expect(useSimpleGenerationStore.getState().activePromptIds).toEqual(['simple-pending']);
+  });
+
+  it('keeps tracked prompts when a queue snapshot temporarily omits them', async () => {
+    useSimpleGenerationStore.setState({ activePromptIds: ['simple-a', 'simple-b'] });
+    queueMocks.pending = [];
+    queueMocks.running = [];
+    historyMocks.history = [];
+    apiMocks.promptHasHistory.mockResolvedValue(false);
+
+    await useSimpleGenerationStore.getState().reconcileCompletedPromptIds();
+
+    expect(apiMocks.promptHasHistory).toHaveBeenCalledWith('simple-a');
+    expect(apiMocks.promptHasHistory).toHaveBeenCalledWith('simple-b');
+    expect(useSimpleGenerationStore.getState().activePromptIds).toEqual(['simple-a', 'simple-b']);
   });
 
   it('stops remaining batch enqueue work when cancellation is requested mid-batch', async () => {
