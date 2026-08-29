@@ -53,6 +53,16 @@ const prompt = {
     inputs: { text: 'restored negative' },
     _meta: { title: 'MOBILE_NEGATIVE' },
   },
+  facePositive: {
+    class_type: 'CLIPTextEncode',
+    inputs: { text: 'restored face positive' },
+    _meta: { title: 'MOBILE_FACE_POSITIVE' },
+  },
+  faceNegative: {
+    class_type: 'CLIPTextEncode',
+    inputs: { text: 'restored face negative' },
+    _meta: { title: 'MOBILE_FACE_NEGATIVE' },
+  },
   size: {
     class_type: 'EmptyLatentImage',
     inputs: { width: 640, height: 768, batch_size: 2 },
@@ -102,6 +112,8 @@ describe('GenerationPanel image restore', () => {
       checkpoint: 'restored/missing.safetensors',
       positivePrompt: 'restored positive',
       negativePrompt: 'restored negative',
+      facePositivePrompt: 'restored face positive',
+      faceNegativePrompt: 'restored face negative',
       width: 640,
       height: 768,
       batchSize: 2,

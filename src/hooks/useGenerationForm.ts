@@ -24,6 +24,8 @@ export interface GenerationFormState {
   checkpoint: string;
   positivePrompt: string;
   negativePrompt: string;
+  facePositivePrompt: string;
+  faceNegativePrompt: string;
   width: number;
   height: number;
   batchSize: number;
@@ -59,6 +61,8 @@ export const DEFAULT_GENERATION_FORM_STATE: GenerationFormState = {
   checkpoint: 'PUT_CHECKPOINT_HERE.safetensors',
   positivePrompt: 'masterpiece, best quality, 1girl',
   negativePrompt: 'lowres, worst quality, bad anatomy',
+  facePositivePrompt: '',
+  faceNegativePrompt: '',
   width: 1024,
   height: 1536,
   batchSize: 1,
@@ -117,6 +121,8 @@ function persistedGenerationFormState(state: GenerationFormStore): GenerationFor
     checkpoint: state.checkpoint,
     positivePrompt: state.positivePrompt,
     negativePrompt: state.negativePrompt,
+    facePositivePrompt: state.facePositivePrompt,
+    faceNegativePrompt: state.faceNegativePrompt,
     width: state.width,
     height: state.height,
     batchSize: state.batchSize,

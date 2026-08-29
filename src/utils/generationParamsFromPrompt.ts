@@ -166,6 +166,8 @@ const NAMES = {
   checkpoint: ['MOBILE_CHECKPOINT'],
   positive: ['MOBILE_POSITIVE'],
   negative: ['MOBILE_NEGATIVE'],
+  facePositive: ['MOBILE_FACE_POSITIVE'],
+  faceNegative: ['MOBILE_FACE_NEGATIVE'],
   size: ['MOBILE_SIZE'],
   baseSampler: ['MOBILE_BASE_SAMPLER'],
   loras: ['MOBILE_LORA_1', 'MOBILE_LORA_2', 'MOBILE_LORA_3'],
@@ -210,6 +212,14 @@ export function generationParamsFromPrompt(prompt: unknown): GenerationFormPatch
   if (positiveValue !== undefined) patch.positivePrompt = positiveValue;
   const negativeValue = stringInput(negative, ['text', 'prompt'], 0);
   if (negativeValue !== undefined) patch.negativePrompt = negativeValue;
+  // Do not fall back by class type here: old execution prompts contain the
+  // main CLIPTextEncode nodes but may not contain these dedicated nodes.
+  const facePositive = findNamed(nodes, NAMES.facePositive);
+  const faceNegative = findNamed(nodes, NAMES.faceNegative);
+  const facePositiveValue = stringInput(facePositive, ['text', 'prompt'], 0);
+  const faceNegativeValue = stringInput(faceNegative, ['text', 'prompt'], 0);
+  if (facePositiveValue !== undefined) patch.facePositivePrompt = facePositiveValue;
+  if (faceNegativeValue !== undefined) patch.faceNegativePrompt = faceNegativeValue;
   const width = numberInput(size, ['width'], 0);
   const height = numberInput(size, ['height'], 1);
   const batchSize = numberInput(size, ['batch_size', 'batchSize'], 2);

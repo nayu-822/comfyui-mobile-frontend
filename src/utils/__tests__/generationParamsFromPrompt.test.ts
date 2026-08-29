@@ -19,6 +19,8 @@ describe('generationParamsFromPrompt', () => {
       checkpoint: node('CheckpointLoaderSimple', { ckpt_name: 'restored/missing.safetensors' }, 'MOBILE_CHECKPOINT'),
       positive: node('CLIPTextEncode', { text: 'a restored positive prompt' }, 'MOBILE_POSITIVE'),
       negative: node('CLIPTextEncode', { text: 'a restored negative prompt' }, 'MOBILE_NEGATIVE'),
+      facePositive: node('CLIPTextEncode', { text: 'a restored face positive prompt' }, 'MOBILE_FACE_POSITIVE'),
+      faceNegative: node('CLIPTextEncode', { text: 'a restored face negative prompt' }, 'MOBILE_FACE_NEGATIVE'),
       size: node('EmptyLatentImage', { width: 768, height: 1024, batch_size: 3 }, 'MOBILE_SIZE'),
       sampler: node('KSampler', {
         seed: 1234,
@@ -60,6 +62,8 @@ describe('generationParamsFromPrompt', () => {
       checkpoint: 'restored/missing.safetensors',
       positivePrompt: 'a restored positive prompt',
       negativePrompt: 'a restored negative prompt',
+      facePositivePrompt: 'a restored face positive prompt',
+      faceNegativePrompt: 'a restored face negative prompt',
       width: 768,
       height: 1024,
       batchSize: 3,
@@ -128,6 +132,8 @@ describe('generationParamsFromPrompt', () => {
       steps: 20,
     });
     expect(patch.loras?.[0].name).toBe('models/class-style.safetensors');
+    expect(patch).not.toHaveProperty('facePositivePrompt');
+    expect(patch).not.toHaveProperty('faceNegativePrompt');
   });
 
   it('recognizes the active resize Hires branch without a latent scale node', () => {

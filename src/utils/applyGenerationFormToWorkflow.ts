@@ -96,6 +96,16 @@ export function applyGenerationFormToWorkflow(
     setGenerationWidgetValue(node, 0, form.positivePrompt, 'text'));
   workflow = updateNamedNode(workflow, nodeNames.negative, (node) =>
     setGenerationWidgetValue(node, 0, form.negativePrompt, 'text'));
+  const facePositivePrompt = form.facePositivePrompt.trim() !== ''
+    ? form.facePositivePrompt
+    : form.positivePrompt;
+  const faceNegativePrompt = form.faceNegativePrompt.trim() !== ''
+    ? form.faceNegativePrompt
+    : form.negativePrompt;
+  workflow = updateNamedNode(workflow, nodeNames.facePositive, (node) =>
+    setGenerationWidgetValue(node, 0, facePositivePrompt, 'text'));
+  workflow = updateNamedNode(workflow, nodeNames.faceNegative, (node) =>
+    setGenerationWidgetValue(node, 0, faceNegativePrompt, 'text'));
 
   workflow = updateNamedNode(workflow, nodeNames.size, (node) => {
     let next = setGenerationWidgetValue(node, 0, Math.round(finiteNumber(form.width, 1024)), 'width');
@@ -181,6 +191,22 @@ export function applyGenerationFormToWorkflow(
   workflow = updateNamedNode(workflow, nodeNames.faceDetector, (node) =>
     setGenerationWidgetValue(node, 0, 'bbox/face_yolov8m.pt', 'model_name'));
   workflow = setMode(workflow, nodeNames.faceDetailer, form.faceDetailerEnabled ? 0 : 4);
+  workflow = setMode(workflow, nodeNames.facePositive, form.faceDetailerEnabled ? 0 : 4);
+  workflow = setMode(workflow, nodeNames.faceNegative, form.faceDetailerEnabled ? 0 : 4);
+  workflow = replaceNamedWorkflowInputLink(
+    workflow,
+    nodeNames.faceDetailer,
+    'positive',
+    nodeNames.facePositive,
+    'CONDITIONING',
+  );
+  workflow = replaceNamedWorkflowInputLink(
+    workflow,
+    nodeNames.faceDetailer,
+    'negative',
+    nodeNames.faceNegative,
+    'CONDITIONING',
+  );
   workflow = updateNamedNode(workflow, nodeNames.faceDetailer, (node) => {
     let next = setGenerationWidgetValue(node, 0, Math.round(finiteNumber(form.faceGuideSize, 768)), 'guide_size');
     next = setGenerationWidgetValue(next, 2, Math.round(finiteNumber(form.faceMaxSize, 1024)), 'max_size');

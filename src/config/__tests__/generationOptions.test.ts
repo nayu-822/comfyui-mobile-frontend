@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { NodeTypes } from '@/api/types';
-import { getSamplerOptions, getSchedulerOptions } from '../generationOptions';
+import {
+  getSamplerOptions,
+  getSchedulerOptions,
+  getUpscaleModelOptions,
+} from '../generationOptions';
 
 const nodeTypes = {
   KSampler: {
@@ -25,5 +29,23 @@ describe('generation options', () => {
   it('falls back to standard ComfyUI choices while node definitions load', () => {
     expect(getSamplerOptions(null, 'euler_ancestral')).toContain('euler_ancestral');
     expect(getSchedulerOptions(null, 'normal')).toContain('normal');
+  });
+
+  it('reads the runtime UpscaleModelLoader model combo without adding a fallback list', () => {
+    const types = {
+      UpscaleModelLoader: {
+        input: {
+          required: {
+            model_name: [['4x-UltraSharp.pth', 'RealESRGAN_x4plus.pth', '4x-UltraSharp.pth']],
+          },
+        },
+      },
+    } as unknown as NodeTypes;
+
+    expect(getUpscaleModelOptions(types)).toEqual([
+      '4x-UltraSharp.pth',
+      'RealESRGAN_x4plus.pth',
+    ]);
+    expect(getUpscaleModelOptions(null)).toEqual([]);
   });
 });

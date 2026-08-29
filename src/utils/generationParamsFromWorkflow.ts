@@ -173,6 +173,17 @@ export function generationParamsFromWorkflow(workflow: Workflow): GenerationForm
     if (resizeMethod !== undefined) patch.resizeMethod = resizeMethod;
   }
 
+  // These are deliberately name-only lookups. Older workflows can have
+  // CLIPTextEncode nodes for the main prompts but no FaceDetailer-specific
+  // nodes; in that case leave the new fields untouched so restore remains
+  // backward compatible.
+  const facePositive = findMobileNode(workflow, nodeNames.facePositive);
+  const faceNegative = findMobileNode(workflow, nodeNames.faceNegative);
+  const facePositiveValue = stringValue(getGenerationWidgetValue(facePositive, 0, 'text'));
+  const faceNegativeValue = stringValue(getGenerationWidgetValue(faceNegative, 0, 'text'));
+  if (facePositiveValue !== undefined) patch.facePositivePrompt = facePositiveValue;
+  if (faceNegativeValue !== undefined) patch.faceNegativePrompt = faceNegativeValue;
+
   const detector = findNamedOrType(workflow, nodeNames.faceDetector, ['UltralyticsDetectorProvider']);
   const faceDetailer = findNamedOrType(workflow, nodeNames.faceDetailer, ['FaceDetailer']);
   if (detector || faceDetailer) {

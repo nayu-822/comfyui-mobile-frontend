@@ -1,11 +1,16 @@
 import type { ReactNode } from 'react';
 import type { NodeTypes } from '@/api/types';
-import { getSamplerOptions, getSchedulerOptions } from '@/config/generationOptions';
+import {
+  getSamplerOptions,
+  getSchedulerOptions,
+  getUpscaleModelOptions,
+} from '@/config/generationOptions';
 import {
   HIRES_RESIZE_METHODS,
   useGenerationForm,
   type HiresResizeMethod,
 } from '@/hooks/useGenerationForm';
+import { isEmptyOrPlaceholderModelName } from '@/utils/generationFormValidation';
 
 const inputClass = 'mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-2.5 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-50';
 const labelClass = 'text-xs font-medium text-slate-300';
@@ -47,19 +52,28 @@ function NumberSetting({
   );
 }
 
-function TextSetting({
+function TextareaSetting({
   label,
   value,
   onChange,
+  placeholder,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  placeholder?: string;
 }) {
   return (
     <label className="block">
       <span className={labelClass}>{label}</span>
-      <input className={inputClass} value={value} onChange={(event) => onChange(event.currentTarget.value)} />
+      <textarea
+        aria-label={label}
+        className={`${inputClass} min-h-16 resize-y`}
+        rows={2}
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.currentTarget.value)}
+      />
     </label>
   );
 }
@@ -121,6 +135,9 @@ export function AdvancedSettings({ nodeTypes = null }: { nodeTypes?: NodeTypes |
   const schedulerOptions = getSchedulerOptions(nodeTypes, form.scheduler);
   const hiresSamplerOptions = getSamplerOptions(nodeTypes, form.hiresSampler);
   const hiresSchedulerOptions = getSchedulerOptions(nodeTypes, form.hiresScheduler);
+  const upscaleModelOptions = getUpscaleModelOptions(nodeTypes);
+  const currentUpscaleModelIsUnlisted = Boolean(form.upscaleModel)
+    && !upscaleModelOptions.includes(form.upscaleModel);
 
   return (
     <section className="space-y-2" aria-labelledby="advanced-generation-settings">
@@ -206,6 +223,18 @@ export function AdvancedSettings({ nodeTypes = null }: { nodeTypes?: NodeTypes |
       </Section>
 
       <Section title="FaceDetailer" disabled={!form.faceDetailerEnabled}>
+        <TextareaSetting
+          label="Positive Prompt"
+          value={form.facePositivePrompt}
+          placeholder="Use main positive prompt"
+          onChange={(value) => set('facePositivePrompt', value)}
+        />
+        <TextareaSetting
+          label="Negative Prompt"
+          value={form.faceNegativePrompt}
+          placeholder="Use main negative prompt"
+          onChange={(value) => set('faceNegativePrompt', value)}
+        />
         <div className="grid grid-cols-2 gap-2">
           <NumberSetting label="Guide Size" value={form.faceGuideSize} min={1} onChange={(value) => set('faceGuideSize', value)} />
           <NumberSetting label="Max Size" value={form.faceMaxSize} min={1} onChange={(value) => set('faceMaxSize', value)} />
@@ -217,7 +246,32 @@ export function AdvancedSettings({ nodeTypes = null }: { nodeTypes?: NodeTypes |
       </Section>
 
       <Section title="Upscaler" disabled={!form.upscaleEnabled}>
-        <TextSetting label="Upscale Model" value={form.upscaleModel} onChange={(value) => set('upscaleModel', value)} />
+        <label className="block">
+          <span className={labelClass}>Upscale Model</span>
+          <select
+            aria-label="Upscale Model"
+            className={inputClass}
+            value={form.upscaleModel}
+            disabled={!form.upscaleEnabled}
+            onChange={(event) => set('upscaleModel', event.currentTarget.value)}
+          >
+            {!form.upscaleModel && (
+              <option value="">
+                Choose an upscale model{upscaleModelOptions.length === 0 ? ' (no models found)' : ''}
+              </option>
+            )}
+            {currentUpscaleModelIsUnlisted && (
+              <option value={form.upscaleModel}>
+                {isEmptyOrPlaceholderModelName(form.upscaleModel)
+                  ? 'Choose an upscale model'
+                  : `Restored model (not detected): ${form.upscaleModel}`}
+              </option>
+            )}
+            {upscaleModelOptions.map((model) => (
+              <option key={model} value={model}>{model}</option>
+            ))}
+          </select>
+        </label>
       </Section>
     </section>
   );

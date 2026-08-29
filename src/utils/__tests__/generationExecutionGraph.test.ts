@@ -35,7 +35,23 @@ function canonicalNodeTypes(): NodeTypes {
   }])) as unknown as NodeTypes;
 }
 
-const nodeTypes = canonicalNodeTypes();
+const nodeTypes = {
+  ...canonicalNodeTypes(),
+  CLIPTextEncode: {
+    input: {
+      required: {
+        clip: ['CLIP', {}],
+        text: ['STRING', { default: '' }],
+      },
+    },
+    output: ['CONDITIONING'],
+    name: 'CLIPTextEncode',
+    display_name: 'CLIPTextEncode',
+    description: '',
+    python_module: '',
+    category: '',
+  },
+} as unknown as NodeTypes;
 
 function nodeId(workflow: Workflow, title: string): number {
   const node = workflow.nodes.find((candidate) => candidate.title === title);
@@ -94,6 +110,68 @@ describe('simple generation execution graph', () => {
     }
     expect(nodeTypes.ComfySwitchNode).toBeUndefined();
     expect(canonicalWorkflow.nodes.some((node) => node.type === 'ComfySwitchNode')).toBe(false);
+  });
+
+  it('keeps FaceDetailer conditioning separate while sharing the final LoRA CLIP', () => {
+    const executionWorkflow = applyGenerationFormToWorkflow(form({
+      faceDetailerEnabled: true,
+      hiresEnabled: true,
+      hiresMode: 'latent',
+      facePositivePrompt: 'face-specific positive',
+      faceNegativePrompt: 'face-specific negative',
+      loras: form().loras.map((slot) => ({ ...slot, enabled: true })) as GenerationFormState['loras'],
+    }), canonicalWorkflow);
+    const prompt = buildPromptFromWorkflow(executionWorkflow, nodeTypes);
+    const finalLoraId = nodeId(executionWorkflow, 'MOBILE_LORA_3');
+    const mainPositiveId = nodeId(executionWorkflow, 'MOBILE_POSITIVE');
+    const mainNegativeId = nodeId(executionWorkflow, 'MOBILE_NEGATIVE');
+    const facePositiveId = nodeId(executionWorkflow, 'MOBILE_FACE_POSITIVE');
+    const faceNegativeId = nodeId(executionWorkflow, 'MOBILE_FACE_NEGATIVE');
+    const faceDetailerId = nodeId(executionWorkflow, 'MOBILE_FACE_DETAILER');
+
+    expect(promptNode(prompt, mainPositiveId).inputs.clip).toEqual([String(finalLoraId), 1]);
+    expect(promptNode(prompt, mainNegativeId).inputs.clip).toEqual([String(finalLoraId), 1]);
+    expect(promptNode(prompt, facePositiveId).inputs.clip).toEqual([String(finalLoraId), 1]);
+    expect(promptNode(prompt, faceNegativeId).inputs.clip).toEqual([String(finalLoraId), 1]);
+    expect(promptNode(prompt, faceDetailerId).inputs.positive).toEqual([String(facePositiveId), 0]);
+    expect(promptNode(prompt, faceDetailerId).inputs.negative).toEqual([String(faceNegativeId), 0]);
+    expect(promptNode(prompt, faceDetailerId).inputs.positive).not.toEqual([String(mainPositiveId), 0]);
+    expect(promptNode(prompt, faceDetailerId).inputs.negative).not.toEqual([String(mainNegativeId), 0]);
+    expect(promptNode(prompt, nodeId(executionWorkflow, 'MOBILE_BASE_SAMPLER')).inputs.positive)
+      .toEqual([String(mainPositiveId), 0]);
+    expect(promptNode(prompt, nodeId(executionWorkflow, 'MOBILE_HIRES_SAMPLER')).inputs.positive)
+      .toEqual([String(mainPositiveId), 0]);
+    expect(promptNode(prompt, facePositiveId).inputs.text).toBe('face-specific positive');
+    expect(promptNode(prompt, faceNegativeId).inputs.text).toBe('face-specific negative');
+    const restored = generationParamsFromWorkflow(executionWorkflow);
+    expect(restored.facePositivePrompt).toBe('face-specific positive');
+    expect(restored.faceNegativePrompt).toBe('face-specific negative');
+    assertWorkflowLinkIntegrity(executionWorkflow);
+  });
+
+  it('uses the main prompts for blank FaceDetailer prompts and bypasses dedicated nodes with FaceDetailer', () => {
+    const executionWorkflow = applyGenerationFormToWorkflow(form({
+      positivePrompt: 'main positive',
+      negativePrompt: 'main negative',
+      facePositivePrompt: '  ',
+      faceNegativePrompt: '',
+      faceDetailerEnabled: true,
+    }), canonicalWorkflow);
+    const prompt = buildPromptFromWorkflow(executionWorkflow, nodeTypes);
+
+    expect(promptNode(prompt, nodeId(executionWorkflow, 'MOBILE_FACE_POSITIVE')).inputs.text)
+      .toBe('main positive');
+    expect(promptNode(prompt, nodeId(executionWorkflow, 'MOBILE_FACE_NEGATIVE')).inputs.text)
+      .toBe('main negative');
+
+    const disabled = applyGenerationFormToWorkflow(form({ faceDetailerEnabled: false }), canonicalWorkflow);
+    expect(nodeId(disabled, 'MOBILE_FACE_POSITIVE')).toBeDefined();
+    expect(disabled.nodes.find((node) => node.title === 'MOBILE_FACE_POSITIVE')?.mode).toBe(4);
+    expect(disabled.nodes.find((node) => node.title === 'MOBILE_FACE_NEGATIVE')?.mode).toBe(4);
+    expect(disabled.nodes.find((node) => node.title === 'MOBILE_FACE_DETAILER')?.mode).toBe(4);
+    const disabledPrompt = buildPromptFromWorkflow(disabled, nodeTypes);
+    expect(disabledPrompt[String(nodeId(disabled, 'MOBILE_FACE_POSITIVE'))]).toBeUndefined();
+    expect(disabledPrompt[String(nodeId(disabled, 'MOBILE_FACE_NEGATIVE'))]).toBeUndefined();
   });
 
   it.each([

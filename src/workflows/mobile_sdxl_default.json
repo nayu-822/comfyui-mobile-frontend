@@ -1,6 +1,6 @@
 {
-  "last_node_id": 20,
-  "last_link_id": 42,
+  "last_node_id": 22,
+  "last_link_id": 46,
   "nodes": [
     {
       "id": 1,
@@ -212,7 +212,9 @@
           "links": [
             7,
             8,
-            22
+            22,
+            43,
+            44
           ],
           "slot_index": 1
         }
@@ -256,7 +258,6 @@
           "links": [
             10,
             15,
-            24,
             36
           ],
           "slot_index": 0
@@ -299,7 +300,6 @@
           "links": [
             11,
             16,
-            25,
             37
           ],
           "slot_index": 0
@@ -835,13 +835,13 @@
         {
           "name": "positive",
           "type": "CONDITIONING",
-          "link": 24,
+          "link": 45,
           "slot_index": 4
         },
         {
           "name": "negative",
           "type": "CONDITIONING",
-          "link": 25,
+          "link": 46,
           "slot_index": 5
         },
         {
@@ -1070,6 +1070,86 @@
       "widgets_values": [
         "%date:yyyyMMdd%_normal/mobile_sdxl"
       ]
+    },
+    {
+      "id": 21,
+      "type": "CLIPTextEncode",
+      "pos": [
+        2980,
+        880
+      ],
+      "size": [
+        320,
+        120
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 43,
+          "slot_index": 0
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            45
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "MOBILE_FACE_POSITIVE",
+      "properties": {
+        "Node name for S&R": "MOBILE_FACE_POSITIVE"
+      },
+      "widgets_values": [
+        ""
+      ]
+    },
+    {
+      "id": 22,
+      "type": "CLIPTextEncode",
+      "pos": [
+        2980,
+        1040
+      ],
+      "size": [
+        320,
+        120
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 44,
+          "slot_index": 0
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            46
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "MOBILE_FACE_NEGATIVE",
+      "properties": {
+        "Node name for S&R": "MOBILE_FACE_NEGATIVE"
+      },
+      "widgets_values": [
+        ""
+      ]
     }
   ],
   "links": [
@@ -1250,22 +1330,6 @@
       "VAE"
     ],
     [
-      24,
-      5,
-      0,
-      13,
-      4,
-      "CONDITIONING"
-    ],
-    [
-      25,
-      6,
-      0,
-      13,
-      5,
-      "CONDITIONING"
-    ],
-    [
       26,
       12,
       0,
@@ -1376,6 +1440,38 @@
       11,
       0,
       "LATENT"
+    ],
+    [
+      43,
+      4,
+      1,
+      21,
+      0,
+      "CLIP"
+    ],
+    [
+      44,
+      4,
+      1,
+      22,
+      0,
+      "CLIP"
+    ],
+    [
+      45,
+      21,
+      0,
+      13,
+      4,
+      "CONDITIONING"
+    ],
+    [
+      46,
+      22,
+      0,
+      13,
+      5,
+      "CONDITIONING"
     ]
   ],
   "groups": [],
@@ -1393,6 +1489,8 @@
         ],
         "positive": "MOBILE_POSITIVE",
         "negative": "MOBILE_NEGATIVE",
+        "facePositive": "MOBILE_FACE_POSITIVE",
+        "faceNegative": "MOBILE_FACE_NEGATIVE",
         "size": "MOBILE_SIZE",
         "baseSampler": "MOBILE_BASE_SAMPLER",
         "hiresUpscale": "MOBILE_HIRES_UPSCALE",
@@ -1440,6 +1538,8 @@
         },
         "faceDetailer": {
           "nodes": [
+            "MOBILE_FACE_POSITIVE",
+            "MOBILE_FACE_NEGATIVE",
             "MOBILE_FACE_DETAILER"
           ],
           "defaultEnabled": false

@@ -43,6 +43,8 @@ function makeWorkflow(): Workflow {
       node(104, 'LoraLoader', 'MOBILE_LORA_3', ['c.safetensors', 1, 1], 4),
       node(105, 'CLIPTextEncode', 'MOBILE_POSITIVE', 'old positive'),
       node(106, 'CLIPTextEncode', 'MOBILE_NEGATIVE', 'old negative'),
+      node(123, 'CLIPTextEncode', 'MOBILE_FACE_POSITIVE', 'old face positive'),
+      node(124, 'CLIPTextEncode', 'MOBILE_FACE_NEGATIVE', 'old face negative'),
       node(107, 'EmptyLatentImage', 'MOBILE_SIZE', [512, 512, 4]),
       node(108, 'KSampler', 'MOBILE_BASE_SAMPLER', [1, 'fixed', 10, 3, 'euler', 'normal', 1], 0, {
         outputs: [{ name: 'LATENT', type: 'LATENT', links: [1], slot_index: 0 }],
@@ -78,6 +80,8 @@ function makeWorkflow(): Workflow {
           loraSlots: ['MOBILE_LORA_1', 'MOBILE_LORA_2', 'MOBILE_LORA_3'],
           positive: 'MOBILE_POSITIVE',
           negative: 'MOBILE_NEGATIVE',
+          facePositive: 'MOBILE_FACE_POSITIVE',
+          faceNegative: 'MOBILE_FACE_NEGATIVE',
           size: 'MOBILE_SIZE',
           baseSampler: 'MOBILE_BASE_SAMPLER',
           hiresUpscale: 'MOBILE_HIRES_UPSCALE',
@@ -216,6 +220,51 @@ describe('applyGenerationFormToWorkflow', () => {
     expect((find(next, 'MOBILE_HIRES_SAMPLER').widgets_values as unknown[])[0]).toBe(42);
     expect((find(next, 'MOBILE_HIRES_RESIZE_SAMPLER').widgets_values as unknown[])[0]).toBe(42);
     expect((find(next, 'MOBILE_FACE_DETAILER').widgets_values as unknown[])[3]).toBe(42);
+  });
+
+  it('writes dedicated FaceDetailer prompts and falls back to the main prompts when blank', () => {
+    const dedicated = applyGenerationFormToWorkflow({
+      ...form(),
+      positivePrompt: 'main positive',
+      negativePrompt: 'main negative',
+      facePositivePrompt: 'face positive',
+      faceNegativePrompt: 'face negative',
+    }, makeWorkflow());
+
+    expect(find(dedicated, 'MOBILE_FACE_POSITIVE').widgets_values).toEqual(['face positive']);
+    expect(find(dedicated, 'MOBILE_FACE_NEGATIVE').widgets_values).toEqual(['face negative']);
+    const restored = generationParamsFromWorkflow(dedicated);
+    expect(restored.facePositivePrompt).toBe('face positive');
+    expect(restored.faceNegativePrompt).toBe('face negative');
+
+    const fallback = applyGenerationFormToWorkflow({
+      ...form(),
+      positivePrompt: 'fallback positive',
+      negativePrompt: 'fallback negative',
+      facePositivePrompt: '   ',
+      faceNegativePrompt: '',
+    }, makeWorkflow());
+
+    expect(find(fallback, 'MOBILE_FACE_POSITIVE').widgets_values).toEqual(['fallback positive']);
+    expect(find(fallback, 'MOBILE_FACE_NEGATIVE').widgets_values).toEqual(['fallback negative']);
+  });
+
+  it('leaves dedicated prompt fields untouched when restoring an older workflow', () => {
+    const legacy = makeWorkflow();
+    legacy.nodes = legacy.nodes.filter((candidate) => ![
+      'MOBILE_FACE_POSITIVE',
+      'MOBILE_FACE_NEGATIVE',
+    ].includes(candidate.title ?? ''));
+
+    const applied = applyGenerationFormToWorkflow({
+      ...form(),
+      facePositivePrompt: 'new face positive',
+      faceNegativePrompt: 'new face negative',
+    }, legacy);
+    const restored = generationParamsFromWorkflow(applied);
+
+    expect(restored).not.toHaveProperty('facePositivePrompt');
+    expect(restored).not.toHaveProperty('faceNegativePrompt');
   });
 
   it('applies and restores the resize Hires branch', () => {

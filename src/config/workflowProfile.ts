@@ -5,6 +5,8 @@ export interface MobileNodeNames {
   loraSlots: [string, string, string];
   positive: string;
   negative: string;
+  facePositive: string;
+  faceNegative: string;
   size: string;
   baseSampler: string;
   hiresUpscale: string;
@@ -40,6 +42,8 @@ export const DEFAULT_MOBILE_NODE_NAMES: MobileNodeNames = {
   loraSlots: ['MOBILE_LORA_1', 'MOBILE_LORA_2', 'MOBILE_LORA_3'],
   positive: 'MOBILE_POSITIVE',
   negative: 'MOBILE_NEGATIVE',
+  facePositive: 'MOBILE_FACE_POSITIVE',
+  faceNegative: 'MOBILE_FACE_NEGATIVE',
   size: 'MOBILE_SIZE',
   baseSampler: 'MOBILE_BASE_SAMPLER',
   hiresUpscale: 'MOBILE_HIRES_UPSCALE',
@@ -73,7 +77,14 @@ const DEFAULT_FEATURES: Record<string, MobileFeatureProfile> = {
     ],
     defaultEnabled: false,
   },
-  faceDetailer: { nodes: [DEFAULT_MOBILE_NODE_NAMES.faceDetailer], defaultEnabled: false },
+  faceDetailer: {
+    nodes: [
+      DEFAULT_MOBILE_NODE_NAMES.facePositive,
+      DEFAULT_MOBILE_NODE_NAMES.faceNegative,
+      DEFAULT_MOBILE_NODE_NAMES.faceDetailer,
+    ],
+    defaultEnabled: false,
+  },
   upscaler: {
     nodes: [DEFAULT_MOBILE_NODE_NAMES.upscaleModel, DEFAULT_MOBILE_NODE_NAMES.upscale],
     defaultEnabled: false,
@@ -110,6 +121,8 @@ export function getMobileGenerationProfile(workflow: Workflow): MobileGeneration
     ],
     positive: stringOr(rawNames.positive, DEFAULT_MOBILE_NODE_NAMES.positive),
     negative: stringOr(rawNames.negative, DEFAULT_MOBILE_NODE_NAMES.negative),
+    facePositive: stringOr(rawNames.facePositive, DEFAULT_MOBILE_NODE_NAMES.facePositive),
+    faceNegative: stringOr(rawNames.faceNegative, DEFAULT_MOBILE_NODE_NAMES.faceNegative),
     size: stringOr(rawNames.size, DEFAULT_MOBILE_NODE_NAMES.size),
     baseSampler: stringOr(rawNames.baseSampler, DEFAULT_MOBILE_NODE_NAMES.baseSampler),
     hiresUpscale: stringOr(rawNames.hiresUpscale, DEFAULT_MOBILE_NODE_NAMES.hiresUpscale),

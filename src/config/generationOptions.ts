@@ -100,3 +100,18 @@ export function getSchedulerOptions(
 ): string[] {
   return getOptions(nodeTypes, 'scheduler', FALLBACK_SCHEDULERS, currentValue);
 }
+
+/** Return only the upscale model names advertised by the connected ComfyUI. */
+export function getUpscaleModelOptions(
+  nodeTypes: NodeTypes | null | undefined,
+): string[] {
+  const definition = nodeTypes?.UpscaleModelLoader;
+  const input = definition?.input.required?.model_name
+    ?? definition?.input.optional?.model_name;
+  const rawOptions = input?.[0];
+  if (!Array.isArray(rawOptions)) return [];
+
+  return Array.from(new Set(rawOptions.filter(
+    (option): option is string => typeof option === 'string' && option.length > 0,
+  )));
+}
