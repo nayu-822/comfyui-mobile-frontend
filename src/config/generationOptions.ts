@@ -53,6 +53,39 @@ const FALLBACK_SCHEDULERS = [
 
 type ComboInputName = 'sampler_name' | 'scheduler';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function uniqueStringOptions(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  const options: string[] = [];
+  const seen = new Set<string>();
+  for (const option of value) {
+    if (typeof option !== 'string' || option.length === 0 || seen.has(option)) continue;
+    seen.add(option);
+    options.push(option);
+  }
+  return options;
+}
+
+/**
+ * Extract choices from the legacy and current /object_info combo formats.
+ * Malformed or non-combo input definitions return an empty list.
+ */
+export function extractComboOptions(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+
+  // Legacy ComfyUI format: [["choice-a", "choice-b"], options].
+  const legacyOptions = uniqueStringOptions(input[0]);
+  if (legacyOptions.length > 0) return legacyOptions;
+
+  // Current ComfyUI format: ["COMBO", { options: ["choice-a", ...] }].
+  if (input[0] !== 'COMBO' || !isRecord(input[1])) return [];
+  return uniqueStringOptions(input[1].options);
+}
+
 function getLiveComboOptions(
   nodeTypes: NodeTypes | null | undefined,
   inputName: ComboInputName,
@@ -61,12 +94,7 @@ function getLiveComboOptions(
     const definition = nodeTypes?.[nodeTypeName];
     const input = definition?.input.required?.[inputName]
       ?? definition?.input.optional?.[inputName];
-    const rawOptions = input?.[0];
-    if (!Array.isArray(rawOptions)) continue;
-
-    const options = rawOptions.filter(
-      (option): option is string => typeof option === 'string' && option.length > 0,
-    );
+    const options = extractComboOptions(input);
     if (options.length > 0) return Array.from(new Set(options));
   }
   return [];
@@ -108,10 +136,5 @@ export function getUpscaleModelOptions(
   const definition = nodeTypes?.UpscaleModelLoader;
   const input = definition?.input.required?.model_name
     ?? definition?.input.optional?.model_name;
-  const rawOptions = input?.[0];
-  if (!Array.isArray(rawOptions)) return [];
-
-  return Array.from(new Set(rawOptions.filter(
-    (option): option is string => typeof option === 'string' && option.length > 0,
-  )));
+  return extractComboOptions(input);
 }

@@ -116,8 +116,8 @@ export interface Workflow {
 }
 
 // Node type definitions from /object_info
-// COMBO inputs put the option list (e.g. ['euler', 'dpmpp_2m']) in the first
-// slot instead of a type-name string, so the entry type accepts either form.
+// COMBO inputs may use the legacy option-list-first form or the current
+// ['COMBO', { options: [...] }] form, so the entry type accepts either form.
 export type NodeInputEntry = [string | unknown[], Record<string, unknown>?];
 
 export interface NodeInputDefinition {

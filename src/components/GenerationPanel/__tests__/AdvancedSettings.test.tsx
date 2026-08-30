@@ -109,7 +109,10 @@ describe('AdvancedSettings Hires controls', () => {
       UpscaleModelLoader: {
         input: {
           required: {
-            model_name: [['4x-UltraSharp.pth', '4x-AnimeSharp.pth']],
+            model_name: ['COMBO', {
+              multiselect: false,
+              options: ['4x-UltraSharp.pth', '4x-AnimeSharp.pth'],
+            }],
           },
         },
       },
@@ -138,6 +141,35 @@ describe('AdvancedSettings Hires controls', () => {
       select.dispatchEvent(new Event('change', { bubbles: true }));
     });
     expect(useGenerationForm.getState().upscaleModel).toBe('4x-AnimeSharp.pth');
+  });
+
+  it('does not mark a restored model as missing when the current runtime combo lists it', async () => {
+    const nodeTypes = {
+      UpscaleModelLoader: {
+        input: {
+          required: {
+            model_name: ['COMBO', {
+              multiselect: false,
+              options: ['4x-UltraSharp.pth', '4x-AnimeSharp.pth'],
+            }],
+          },
+        },
+      },
+    } as unknown as NodeTypes;
+    useGenerationForm.getState().patch({
+      upscaleEnabled: true,
+      upscaleModel: '4x-UltraSharp.pth',
+    });
+
+    await act(async () => root.render(<AdvancedSettings nodeTypes={nodeTypes} />));
+
+    const select = container.querySelector('select[aria-label="Upscale Model"]') as HTMLSelectElement | null;
+    expect(select?.value).toBe('4x-UltraSharp.pth');
+    expect(Array.from(select?.options ?? []).map((option) => option.textContent)).toEqual([
+      '4x-UltraSharp.pth',
+      '4x-AnimeSharp.pth',
+    ]);
+    expect(Array.from(select?.options ?? []).some((option) => option.textContent?.includes('Restored model'))).toBe(false);
   });
 
   it('keeps the Upscale Model control disabled while Upscaler is off', async () => {
