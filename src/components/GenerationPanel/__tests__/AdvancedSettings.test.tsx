@@ -5,6 +5,12 @@ import type { NodeTypes } from '@/api/types';
 import { useGenerationForm } from '@/hooks/useGenerationForm';
 import { AdvancedSettings } from '../AdvancedSettings';
 
+function setInputValue(input: HTMLInputElement, value: string): void {
+  const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  valueSetter?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 describe('AdvancedSettings Hires controls', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -78,6 +84,98 @@ describe('AdvancedSettings Hires controls', () => {
     expect(useGenerationForm.getState().scheduler).toBe('karras');
     expect(useGenerationForm.getState().hiresSampler).toBe('euler');
     expect(useGenerationForm.getState().hiresScheduler).toBe('simple');
+  });
+
+  it('keeps Sampling Steps empty while editing, accepts a new value, and falls back on blur', async () => {
+    await act(async () => root.render(<AdvancedSettings />));
+
+    const steps = container.querySelector('input[aria-label="Sampling Steps"]') as HTMLInputElement | null;
+    if (!steps) throw new Error('Sampling Steps input was not rendered.');
+
+    await act(async () => {
+      steps.focus();
+      setInputValue(steps, '');
+    });
+    expect(steps.value).toBe('');
+
+    await act(async () => setInputValue(steps, '35'));
+    expect(steps.value).toBe('35');
+    expect(useGenerationForm.getState().steps).toBe(35);
+
+    await act(async () => {
+      setInputValue(steps, '');
+      steps.blur();
+    });
+    expect(steps.value).toBe('1');
+    expect(useGenerationForm.getState().steps).toBe(1);
+  });
+
+  it('keeps zero-minimum CFG empty until blur, then restores zero', async () => {
+    await act(async () => root.render(<AdvancedSettings />));
+
+    const cfg = container.querySelector('input[aria-label="Sampling CFG"]') as HTMLInputElement | null;
+    if (!cfg) throw new Error('Sampling CFG input was not rendered.');
+
+    await act(async () => {
+      cfg.focus();
+      setInputValue(cfg, '');
+    });
+    expect(cfg.value).toBe('');
+    expect(cfg.value).not.toBe('0');
+
+    await act(async () => cfg.blur());
+    expect(cfg.value).toBe('0');
+    expect(useGenerationForm.getState().cfg).toBe(0);
+  });
+
+  it('keeps Hires Denoise and FaceDetailer CFG empty while editing', async () => {
+    useGenerationForm.getState().patch({ faceDetailerEnabled: true });
+    await act(async () => root.render(<AdvancedSettings />));
+
+    const hiresDenoise = container.querySelector('input[aria-label="Hires Denoise"]') as HTMLInputElement | null;
+    const faceCfg = container.querySelector('input[aria-label="FaceDetailer CFG"]') as HTMLInputElement | null;
+    if (!hiresDenoise || !faceCfg) throw new Error('Advanced numeric inputs were not rendered.');
+
+    await act(async () => {
+      hiresDenoise.focus();
+      setInputValue(hiresDenoise, '');
+    });
+    expect(hiresDenoise.value).toBe('');
+    expect(hiresDenoise.value).not.toBe('0');
+
+    await act(async () => {
+      faceCfg.focus();
+      setInputValue(faceCfg, '');
+    });
+    expect(faceCfg.value).toBe('');
+    expect(faceCfg.value).not.toBe('0');
+  });
+
+  it('syncs a restored external Steps value when the field is not being edited', async () => {
+    await act(async () => root.render(<AdvancedSettings />));
+
+    const steps = container.querySelector('input[aria-label="Sampling Steps"]') as HTMLInputElement | null;
+    if (!steps) throw new Error('Sampling Steps input was not rendered.');
+
+    await act(async () => useGenerationForm.getState().patch({ steps: 42 }));
+    expect(steps.value).toBe('42');
+  });
+
+  it('does not overwrite a focused numeric draft during an external update', async () => {
+    await act(async () => root.render(<AdvancedSettings />));
+
+    const steps = container.querySelector('input[aria-label="Sampling Steps"]') as HTMLInputElement | null;
+    if (!steps) throw new Error('Sampling Steps input was not rendered.');
+
+    await act(async () => {
+      steps.focus();
+      setInputValue(steps, '');
+    });
+    await act(async () => useGenerationForm.getState().patch({ steps: 42 }));
+    expect(steps.value).toBe('');
+
+    await act(async () => steps.blur());
+    expect(steps.value).toBe('1');
   });
 
   it('renders FaceDetailer prompt textareas above its numeric settings', async () => {

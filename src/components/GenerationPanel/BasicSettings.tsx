@@ -1,8 +1,8 @@
-import type { ChangeEvent } from 'react';
 import { useGenerationForm, type GenerationFormState, type LoraSlot } from '@/hooks/useGenerationForm';
 import type { CheckpointLoadStatus } from '@/hooks/useCheckpoints';
 import type { LoraLoadStatus } from '@/hooks/useLoras';
 import { isEmptyOrPlaceholderModelName } from '@/utils/generationFormValidation';
+import { EditableNumberInput } from './EditableNumberInput';
 
 const inputClass = 'mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-50';
 const smallInputClass = 'mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-2.5 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-50';
@@ -20,33 +20,6 @@ export interface BasicSettingsProps {
   onReloadLoras: () => void;
 }
 
-function NumberField({
-  label,
-  value,
-  onChange,
-  step = '1',
-  min,
-}: {
-  label: string;
-  value: number;
-  onChange: (value: number) => void;
-  step?: string;
-  min?: number;
-}) {
-  return (
-    <label className="block">
-      <span className={labelClass}>{label}</span>
-      <input
-        className={smallInputClass}
-        type="number"
-        value={Number.isFinite(value) ? value : ''}
-        min={min}
-        step={step}
-        onChange={(event) => onChange(Number(event.currentTarget.value))}
-      />
-    </label>
-  );
-}
 function LoraCard({
   index,
   slot,
@@ -65,10 +38,6 @@ function LoraCard({
   const setLora = useGenerationForm((state) => state.setLora);
   const currentLoraIsListed = loras.includes(slot.name);
   const currentLoraIsUnlisted = Boolean(slot.name) && !currentLoraIsListed;
-  const handleStrength = (event: ChangeEvent<HTMLInputElement>) => {
-    const value = Number(event.currentTarget.value);
-    setLora(index, { strengthModel: value, strengthClip: value });
-  };
 
   return (
     <div className="rounded-xl border border-white/10 bg-slate-900/70 p-3">
@@ -130,17 +99,18 @@ function LoraCard({
           </div>
         )}
       </label>
-      <label className="mt-2 block">
-        <span className={labelClass}>Strength</span>
-        <input
-          className={smallInputClass}
-          type="number"
-          step="0.05"
-          value={Number.isFinite(slot.strengthModel) ? slot.strengthModel : ''}
-          onChange={handleStrength}
-          disabled={!slot.enabled}
-        />
-      </label>
+      <EditableNumberInput
+        label="Strength"
+        ariaLabel={`LoRA ${index + 1} Strength`}
+        wrapperClassName="mt-2 block"
+        value={slot.strengthModel}
+        defaultValue={1}
+        step="0.05"
+        className={smallInputClass}
+        labelClass={labelClass}
+        onChange={(value) => setLora(index, { strengthModel: value, strengthClip: value })}
+        disabled={!slot.enabled}
+      />
     </div>
   );
 }
@@ -245,8 +215,22 @@ export function BasicSettings({
       </label>
 
       <div className="grid grid-cols-2 gap-2">
-        <NumberField label="Width" value={form.width} min={64} onChange={updateNumber('width')} />
-        <NumberField label="Height" value={form.height} min={64} onChange={updateNumber('height')} />
+        <EditableNumberInput
+          label="Width"
+          value={form.width}
+          min={64}
+          className={smallInputClass}
+          labelClass={labelClass}
+          onChange={updateNumber('width')}
+        />
+        <EditableNumberInput
+          label="Height"
+          value={form.height}
+          min={64}
+          className={smallInputClass}
+          labelClass={labelClass}
+          onChange={updateNumber('height')}
+        />
       </div>
 
       <fieldset className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
@@ -263,22 +247,18 @@ export function BasicSettings({
             <option value="fixed">Fixed</option>
           </select>
         </label>
-        <label className="mt-2 block">
-          <span className={labelClass}>Seed value</span>
-          <input
-            className={`${smallInputClass} disabled:cursor-not-allowed disabled:opacity-50`}
-            type="number"
-            min={0}
-            step="1"
-            value={Number.isFinite(form.seed) ? form.seed : ''}
-            onChange={(event) => {
-              const value = event.currentTarget.value;
-              setField('seed', value === '' ? Number.NaN : Number(value));
-            }}
-            disabled={form.seedMode === 'random'}
-            aria-label="Seed value"
-          />
-        </label>
+        <EditableNumberInput
+          label="Seed value"
+          ariaLabel="Seed value"
+          wrapperClassName="mt-2 block"
+          value={form.seed}
+          min={0}
+          step="1"
+          className={`${smallInputClass} disabled:cursor-not-allowed disabled:opacity-50`}
+          labelClass={labelClass}
+          onChange={(value) => setField('seed', value)}
+          disabled={form.seedMode === 'random'}
+        />
         {form.seedMode === 'random' && (
           <p className="mt-1 text-xs text-slate-400">A new seed is generated for each run.</p>
         )}

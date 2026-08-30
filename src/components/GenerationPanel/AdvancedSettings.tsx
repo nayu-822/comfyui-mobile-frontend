@@ -11,6 +11,7 @@ import {
   type HiresResizeMethod,
 } from '@/hooks/useGenerationForm';
 import { isEmptyOrPlaceholderModelName } from '@/utils/generationFormValidation';
+import { EditableNumberInput } from './EditableNumberInput';
 
 const inputClass = 'mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-2.5 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-50';
 const labelClass = 'text-xs font-medium text-slate-300';
@@ -20,37 +21,6 @@ const resizeMethodLabels: Record<HiresResizeMethod, string> = {
   bicubic: 'Bicubic',
   lanczos: 'Lanczos',
 };
-
-function NumberSetting({
-  label,
-  value,
-  onChange,
-  step = '1',
-  min,
-  max,
-}: {
-  label: string;
-  value: number;
-  onChange: (value: number) => void;
-  step?: string;
-  min?: number;
-  max?: number;
-}) {
-  return (
-    <label className="block">
-      <span className={labelClass}>{label}</span>
-      <input
-        className={inputClass}
-        type="number"
-        value={Number.isFinite(value) ? value : ''}
-        min={min}
-        max={max}
-        step={step}
-        onChange={(event) => onChange(Number(event.currentTarget.value))}
-      />
-    </label>
-  );
-}
 
 function TextareaSetting({
   label,
@@ -147,8 +117,25 @@ export function AdvancedSettings({ nodeTypes = null }: { nodeTypes?: NodeTypes |
 
       <Section title="Sampling">
         <div className="grid grid-cols-2 gap-2">
-          <NumberSetting label="Steps" value={form.steps} min={1} onChange={(value) => set('steps', value)} />
-          <NumberSetting label="CFG" value={form.cfg} min={0} step="0.1" onChange={(value) => set('cfg', value)} />
+          <EditableNumberInput
+            label="Steps"
+            ariaLabel="Sampling Steps"
+            value={form.steps}
+            min={1}
+            className={inputClass}
+            labelClass={labelClass}
+            onChange={(value) => set('steps', value)}
+          />
+          <EditableNumberInput
+            label="CFG"
+            ariaLabel="Sampling CFG"
+            value={form.cfg}
+            min={0}
+            step="0.1"
+            className={inputClass}
+            labelClass={labelClass}
+            onChange={(value) => set('cfg', value)}
+          />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <SelectSetting
@@ -184,10 +171,46 @@ export function AdvancedSettings({ nodeTypes = null }: { nodeTypes?: NodeTypes |
           </label>
         )}
         <div className="grid grid-cols-2 gap-2">
-          <NumberSetting label="Scale" value={form.hiresScale} min={1} step="0.05" onChange={(value) => set('hiresScale', value)} />
-          <NumberSetting label="Steps" value={form.hiresSteps} min={1} onChange={(value) => set('hiresSteps', value)} />
-          <NumberSetting label="CFG" value={form.hiresCfg} min={0} step="0.1" onChange={(value) => set('hiresCfg', value)} />
-          <NumberSetting label="Denoise" value={form.hiresDenoise} min={0} max={1} step="0.01" onChange={(value) => set('hiresDenoise', value)} />
+          <EditableNumberInput
+            label="Scale"
+            ariaLabel="Hires Scale"
+            value={form.hiresScale}
+            min={1}
+            step="0.05"
+            className={inputClass}
+            labelClass={labelClass}
+            onChange={(value) => set('hiresScale', value)}
+          />
+          <EditableNumberInput
+            label="Steps"
+            ariaLabel="Hires Steps"
+            value={form.hiresSteps}
+            min={1}
+            className={inputClass}
+            labelClass={labelClass}
+            onChange={(value) => set('hiresSteps', value)}
+          />
+          <EditableNumberInput
+            label="CFG"
+            ariaLabel="Hires CFG"
+            value={form.hiresCfg}
+            min={0}
+            step="0.1"
+            className={inputClass}
+            labelClass={labelClass}
+            onChange={(value) => set('hiresCfg', value)}
+          />
+          <EditableNumberInput
+            label="Denoise"
+            ariaLabel="Hires Denoise"
+            value={form.hiresDenoise}
+            min={0}
+            max={1}
+            step="0.01"
+            className={inputClass}
+            labelClass={labelClass}
+            onChange={(value) => set('hiresDenoise', value)}
+          />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <SelectSetting
@@ -236,12 +259,65 @@ export function AdvancedSettings({ nodeTypes = null }: { nodeTypes?: NodeTypes |
           onChange={(value) => set('faceNegativePrompt', value)}
         />
         <div className="grid grid-cols-2 gap-2">
-          <NumberSetting label="Guide Size" value={form.faceGuideSize} min={1} onChange={(value) => set('faceGuideSize', value)} />
-          <NumberSetting label="Max Size" value={form.faceMaxSize} min={1} onChange={(value) => set('faceMaxSize', value)} />
-          <NumberSetting label="Steps" value={form.faceSteps} min={1} onChange={(value) => set('faceSteps', value)} />
-          <NumberSetting label="CFG" value={form.faceCfg} min={0} step="0.1" onChange={(value) => set('faceCfg', value)} />
-          <NumberSetting label="Denoise" value={form.faceDenoise} min={0} max={1} step="0.01" onChange={(value) => set('faceDenoise', value)} />
-          <NumberSetting label="BBox Threshold" value={form.faceBBoxThreshold} min={0} max={1} step="0.01" onChange={(value) => set('faceBBoxThreshold', value)} />
+          <EditableNumberInput
+            label="Guide Size"
+            ariaLabel="FaceDetailer Guide Size"
+            value={form.faceGuideSize}
+            min={1}
+            className={inputClass}
+            labelClass={labelClass}
+            onChange={(value) => set('faceGuideSize', value)}
+          />
+          <EditableNumberInput
+            label="Max Size"
+            ariaLabel="FaceDetailer Max Size"
+            value={form.faceMaxSize}
+            min={1}
+            className={inputClass}
+            labelClass={labelClass}
+            onChange={(value) => set('faceMaxSize', value)}
+          />
+          <EditableNumberInput
+            label="Steps"
+            ariaLabel="FaceDetailer Steps"
+            value={form.faceSteps}
+            min={1}
+            className={inputClass}
+            labelClass={labelClass}
+            onChange={(value) => set('faceSteps', value)}
+          />
+          <EditableNumberInput
+            label="CFG"
+            ariaLabel="FaceDetailer CFG"
+            value={form.faceCfg}
+            min={0}
+            step="0.1"
+            className={inputClass}
+            labelClass={labelClass}
+            onChange={(value) => set('faceCfg', value)}
+          />
+          <EditableNumberInput
+            label="Denoise"
+            ariaLabel="FaceDetailer Denoise"
+            value={form.faceDenoise}
+            min={0}
+            max={1}
+            step="0.01"
+            className={inputClass}
+            labelClass={labelClass}
+            onChange={(value) => set('faceDenoise', value)}
+          />
+          <EditableNumberInput
+            label="BBox Threshold"
+            ariaLabel="FaceDetailer BBox Threshold"
+            value={form.faceBBoxThreshold}
+            min={0}
+            max={1}
+            step="0.01"
+            className={inputClass}
+            labelClass={labelClass}
+            onChange={(value) => set('faceBBoxThreshold', value)}
+          />
         </div>
       </Section>
 

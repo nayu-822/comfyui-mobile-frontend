@@ -16,6 +16,12 @@ const props = {
   onReloadLoras: () => {},
 };
 
+function setInputValue(input: HTMLInputElement, value: string): void {
+  const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  valueSetter?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 describe('BasicSettings', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -75,6 +81,85 @@ describe('BasicSettings', () => {
     });
 
     expect(useGenerationForm.getState().loras[0].name).toBe('models/style.safetensors');
+  });
+
+  it('keeps Width and Height empty while editing and falls back to their minimum on blur', async () => {
+    await act(async () => root.render(<BasicSettings {...props} />));
+
+    const width = container.querySelector('input[aria-label="Width"]') as HTMLInputElement | null;
+    const height = container.querySelector('input[aria-label="Height"]') as HTMLInputElement | null;
+    if (!width || !height) throw new Error('Width and Height inputs were not rendered.');
+
+    await act(async () => {
+      width.focus();
+      setInputValue(width, '');
+    });
+    expect(width.value).toBe('');
+
+    await act(async () => width.blur());
+    expect(width.value).toBe('64');
+
+    await act(async () => {
+      height.focus();
+      setInputValue(height, '');
+    });
+    expect(height.value).toBe('');
+
+    await act(async () => height.blur());
+    expect(height.value).toBe('64');
+    expect(useGenerationForm.getState().width).toBe(64);
+    expect(useGenerationForm.getState().height).toBe(64);
+  });
+
+  it('allows LoRA strength to be empty while editing and restores the default on blur', async () => {
+    useGenerationForm.getState().setLora(0, {
+      enabled: true,
+      strengthModel: 0.75,
+      strengthClip: 0.75,
+    });
+    await act(async () => root.render(<BasicSettings {...props} />));
+
+    const strength = container.querySelector('input[aria-label="LoRA 1 Strength"]') as HTMLInputElement | null;
+    if (!strength) throw new Error('LoRA strength input was not rendered.');
+
+    await act(async () => {
+      strength.focus();
+      setInputValue(strength, '');
+    });
+    expect(strength.value).toBe('');
+
+    await act(async () => strength.blur());
+    expect(strength.value).toBe('1');
+    expect(useGenerationForm.getState().loras[0].strengthModel).toBe(1);
+    expect(useGenerationForm.getState().loras[0].strengthClip).toBe(1);
+  });
+
+  it('keeps Seed empty while editing and restores zero on blur', async () => {
+    useGenerationForm.getState().patch({ seedMode: 'fixed', seed: 123 });
+    await act(async () => root.render(<BasicSettings {...props} />));
+
+    const seed = container.querySelector('input[aria-label="Seed value"]') as HTMLInputElement | null;
+    if (!seed) throw new Error('Seed input was not rendered.');
+
+    await act(async () => {
+      seed.focus();
+      setInputValue(seed, '');
+    });
+    expect(seed.value).toBe('');
+
+    await act(async () => seed.blur());
+    expect(seed.value).toBe('0');
+    expect(useGenerationForm.getState().seed).toBe(0);
+  });
+
+  it('syncs a restored external Width value when the field is not being edited', async () => {
+    await act(async () => root.render(<BasicSettings {...props} />));
+
+    const width = container.querySelector('input[aria-label="Width"]') as HTMLInputElement | null;
+    if (!width) throw new Error('Width input was not rendered.');
+
+    await act(async () => useGenerationForm.getState().patch({ width: 640 }));
+    expect(width.value).toBe('640');
   });
 
   it('keeps a restored LoRA as a visible not-detected option', async () => {
