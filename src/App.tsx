@@ -32,6 +32,7 @@ import { GenerationPanel } from './components/GenerationPanel/GenerationPanel';
 
 function App() {
   const currentPanel = useNavigationStore((s) => s.currentPanel);
+  const currentGenerationMode = useNavigationStore((s) => s.currentGenerationMode ?? 'sdxl');
   const setCurrentPanel = useNavigationStore((s) => s.setCurrentPanel);
   const appMenuOpen = useAppMenuStore((s) => s.appMenuOpen);
   const setAppMenuOpen = useAppMenuStore((s) => s.setAppMenuOpen);
@@ -281,7 +282,7 @@ function App() {
 
   return (
     <div id="app-root" className="min-h-screen bg-slate-950">
-      <TopBar mode={currentPanel} />
+      <TopBar mode={currentPanel} generationMode={currentGenerationMode} />
 
       <main
         id="main-content"
@@ -298,7 +299,14 @@ function App() {
       >
         <>
           <OutputsPanel visible={currentPanel === 'outputs'} />
-          <GenerationPanel visible={currentPanel === 'generation'} />
+          <GenerationPanel
+            visible={currentPanel === 'generation' && currentGenerationMode === 'sdxl'}
+            mode="sdxl"
+          />
+          <GenerationPanel
+            visible={currentPanel === 'generation' && currentGenerationMode === 'anima'}
+            mode="anima"
+          />
           <WorkflowPanel visible={currentPanel === 'workflow'} onImageClick={openViewer} />
           <QueuePanel visible={currentPanel === 'queue'} onImageClick={openViewer} />
         </>

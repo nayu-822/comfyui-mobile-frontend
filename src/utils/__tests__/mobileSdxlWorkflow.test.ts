@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Workflow, WorkflowLink, WorkflowNode } from '@/api/types';
 import mobileSdxlWorkflowAsset from '@/workflows/mobile_sdxl_default.json';
+import mobileAnimaWorkflowAsset from '@/workflows/mobile_anima_default.json';
 
 const workflow = mobileSdxlWorkflowAsset as unknown as Workflow;
+const animaWorkflow = mobileAnimaWorkflowAsset as unknown as Workflow;
 
 function nodeByTitle(title: string): WorkflowNode {
   const node = workflow.nodes.find((candidate) => candidate.title === title);
@@ -14,6 +16,12 @@ function linkById(id: number): WorkflowLink {
   const link = workflow.links.find((candidate) => candidate[0] === id);
   if (!link) throw new Error(`Missing link ${id}`);
   return link;
+}
+
+function animaNodeByTitle(title: string): WorkflowNode {
+  const node = animaWorkflow.nodes.find((candidate) => candidate.title === title);
+  if (!node) throw new Error(`Missing Anima ${title}`);
+  return node;
 }
 
 describe('mobile_sdxl_default workflow', () => {
@@ -52,5 +60,31 @@ describe('mobile_sdxl_default workflow', () => {
     expect(nodeByTitle('MOBILE_HIRES_SAMPLER').outputs[0]?.links).toEqual([]);
     expect(nodeByTitle('MOBILE_HIRES_RESIZE_SAMPLER').outputs[0]?.links).toEqual([]);
     expect(nodeByTitle('MOBILE_VAE_DECODE').inputs[0]?.link).toBe(42);
+  });
+});
+
+describe('mobile_anima_default workflow', () => {
+  it('provides the shared generation features with an Anima-specific profile', () => {
+    expect(animaWorkflow.extra).toMatchObject({
+      mobile_generation_profile: { workflowKind: 'anima' },
+    });
+    const checkpointWidgets = animaNodeByTitle('MOBILE_CHECKPOINT').widgets_values;
+    expect(Array.isArray(checkpointWidgets) ? checkpointWidgets[0] : undefined)
+      .toBe('PUT_ANIMA_CHECKPOINT_HERE.safetensors');
+    expect(animaWorkflow.nodes).toHaveLength(workflow.nodes.length);
+    expect(animaWorkflow.links).toHaveLength(workflow.links.length);
+
+    for (const title of [
+      'MOBILE_LORA_1',
+      'MOBILE_LORA_2',
+      'MOBILE_LORA_3',
+      'MOBILE_HIRES_UPSCALE',
+      'MOBILE_HIRES_SAMPLER',
+      'MOBILE_FACE_DETAILER',
+      'MOBILE_UPSCALE_MODEL',
+      'MOBILE_UPSCALE',
+    ]) {
+      expect(animaNodeByTitle(title)).toBeDefined();
+    }
   });
 });

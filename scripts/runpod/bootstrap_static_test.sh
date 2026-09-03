@@ -90,13 +90,20 @@ assert_contains "$BOOTSTRAP" 'start_post_start_health_check()'
 assert_contains "$BOOTSTRAP" '/object_info'
 assert_contains "$BOOTSTRAP" '/mobile/'
 assert_contains "$BOOTSTRAP" 'api/userdata?dir=workflows&recurse=true&split=false&full_info=true'
+assert_contains "$BOOTSTRAP" "grep -Fq 'mobile_anima_default.json' <<<\"\$health_workflow_data\""
 assert_contains "$BOOTSTRAP" 'CANONICAL_WORKFLOW_SRC="${CANONICAL_WORKFLOW_SRC:-${MOBILE_FRONTEND_SRC}/src/workflows/mobile_sdxl_default.json}"'
 assert_contains "$BOOTSTRAP" 'COMFYUI_WORKFLOW_DIR="${COMFYUI_WORKFLOW_DIR:-${COMFYUI_DIR}/user/default/workflows}"'
 assert_contains "$BOOTSTRAP" 'COMFYUI_CANONICAL_WORKFLOW="${COMFYUI_CANONICAL_WORKFLOW:-${COMFYUI_WORKFLOW_DIR}/mobile_sdxl_default.json}"'
+assert_contains "$BOOTSTRAP" 'ANIMA_WORKFLOW_SRC="${ANIMA_WORKFLOW_SRC:-${MOBILE_FRONTEND_SRC}/src/workflows/mobile_anima_default.json}"'
+assert_contains "$BOOTSTRAP" 'COMFYUI_ANIMA_WORKFLOW="${COMFYUI_ANIMA_WORKFLOW:-${COMFYUI_WORKFLOW_DIR}/mobile_anima_default.json}"'
 assert_contains "$BOOTSTRAP" 'register_canonical_workflow()'
+assert_contains "$BOOTSTRAP" 'register_anima_workflow()'
 assert_contains "$BOOTSTRAP" 'cp -- "$CANONICAL_WORKFLOW_SRC" "$temp_path"'
 assert_contains "$BOOTSTRAP" 'mv -f -- "$temp_path" "$COMFYUI_CANONICAL_WORKFLOW"'
 assert_contains "$BOOTSTRAP" '[[ -f "$COMFYUI_CANONICAL_WORKFLOW" && ! -L "$COMFYUI_CANONICAL_WORKFLOW" ]]'
+assert_contains "$BOOTSTRAP" 'cp -- "$ANIMA_WORKFLOW_SRC" "$temp_path"'
+assert_contains "$BOOTSTRAP" 'mv -f -- "$temp_path" "$COMFYUI_ANIMA_WORKFLOW"'
+assert_contains "$BOOTSTRAP" '[[ -f "$COMFYUI_ANIMA_WORKFLOW" && ! -L "$COMFYUI_ANIMA_WORKFLOW" ]]'
 assert_contains "$BOOTSTRAP" 'registered canonical workflow:'
 assert_not_contains "$BOOTSTRAP" 'ln -s "$CANONICAL_WORKFLOW_SRC"'
 assert_not_contains "$BOOTSTRAP" 'ln -s "$COMFYUI_CANONICAL_WORKFLOW"'
@@ -130,6 +137,29 @@ mkdir -p "$COMFYUI_DIR/custom_nodes" "$MOBILE_FRONTEND_SRC/dist"
 printf '%s\n' '# test custom node' > "$MOBILE_FRONTEND_SRC/__init__.py"
 printf '%s\n' '<html></html>' > "$MOBILE_FRONTEND_SRC/dist/index.html"
 source "$BOOTSTRAP"
+
+workflow_source_dir="$behavior_tmp/workflows"
+mkdir -p "$workflow_source_dir"
+printf '%s\n' '{"workflow":"sdxl"}' > "$workflow_source_dir/mobile_sdxl_default.json"
+printf '%s\n' '{"workflow":"anima"}' > "$workflow_source_dir/mobile_anima_default.json"
+CANONICAL_WORKFLOW_SRC="$workflow_source_dir/mobile_sdxl_default.json"
+COMFYUI_CANONICAL_WORKFLOW="$behavior_tmp/registered/mobile_sdxl_default.json"
+ANIMA_WORKFLOW_SRC="$workflow_source_dir/mobile_anima_default.json"
+COMFYUI_ANIMA_WORKFLOW="$behavior_tmp/registered/mobile_anima_default.json"
+register_canonical_workflow
+register_anima_workflow
+[[ -f "$COMFYUI_CANONICAL_WORKFLOW" && -f "$COMFYUI_ANIMA_WORKFLOW" ]] || {
+  echo "workflow behavior test failed: both canonical workflows were not registered" >&2
+  exit 1
+}
+grep -Fq '"workflow":"sdxl"' "$COMFYUI_CANONICAL_WORKFLOW" || {
+  echo "workflow behavior test failed: SDXL workflow content was not copied" >&2
+  exit 1
+}
+grep -Fq '"workflow":"anima"' "$COMFYUI_ANIMA_WORKFLOW" || {
+  echo "workflow behavior test failed: Anima workflow content was not copied" >&2
+  exit 1
+}
 
 printf '%s\n' '# runtime constraint' > "$RUNTIME_PIP_CONSTRAINT_FILE"
 unset PIP_CONSTRAINT

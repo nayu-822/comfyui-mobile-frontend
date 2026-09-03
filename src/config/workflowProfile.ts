@@ -1,4 +1,5 @@
 import type { Workflow, WorkflowNode } from '@/api/types';
+import type { SimpleGenerationMode } from '@/config/simpleGenerationMode';
 
 export interface MobileNodeNames {
   checkpoint: string;
@@ -33,6 +34,7 @@ export interface MobileFeatureProfile {
 }
 
 export interface MobileGenerationProfile {
+  workflowKind: SimpleGenerationMode;
   nodeNames: MobileNodeNames;
   features: Record<string, MobileFeatureProfile>;
 }
@@ -110,6 +112,7 @@ function readProfile(workflow: Workflow): Record<string, unknown> {
 /** Read the optional profile while keeping the committed MOBILE_* names as a safe fallback. */
 export function getMobileGenerationProfile(workflow: Workflow): MobileGenerationProfile {
   const rawProfile = readProfile(workflow);
+  const workflowKind: SimpleGenerationMode = rawProfile.workflowKind === 'anima' ? 'anima' : 'sdxl';
   const rawNames = isRecord(rawProfile.nodeNames) ? rawProfile.nodeNames : {};
   const rawLoraSlots = Array.isArray(rawNames.loraSlots) ? rawNames.loraSlots : [];
   const nodeNames: MobileNodeNames = {
@@ -155,7 +158,7 @@ export function getMobileGenerationProfile(workflow: Workflow): MobileGeneration
     };
   }
 
-  return { nodeNames, features };
+  return { workflowKind, nodeNames, features };
 }
 
 export function getWorkflowNodeName(node: WorkflowNode): string | null {

@@ -41,6 +41,7 @@ interface MainMenuPanelProps {
   onRestartServer: () => void;
   onOpenGenerationSettings: () => void;
   onOpenSimpleGeneration: () => void;
+  onOpenAnimaGeneration: () => void;
   onOpenCustomNodes: () => void;
 }
 
@@ -71,19 +72,36 @@ export function MainMenuPanel({
   onRestartServer,
   onOpenGenerationSettings,
   onOpenSimpleGeneration,
+  onOpenAnimaGeneration,
   onOpenCustomNodes,
 }: MainMenuPanelProps) {
   return (
     <div className="pb-8">
       <MenuErrorNotice error={error} onDismiss={onDismissError} />
 
-      <button
-        type="button"
-        onClick={onOpenSimpleGeneration}
-        className="mx-3 mb-3 flex min-h-12 w-[calc(100%-1.5rem)] items-center rounded-xl border border-cyan-400/30 bg-cyan-950/30 px-4 text-left text-sm font-semibold text-cyan-100 hover:bg-cyan-900/40"
-      >
-        Simple Generation
-      </button>
+      <div className="mx-3 mb-3 rounded-xl border border-cyan-400/30 bg-cyan-950/30 p-2" data-testid="simple-generation-menu">
+        <div className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-cyan-200">
+          Simple Generation
+        </div>
+        <div className="grid grid-cols-1 gap-1">
+          <button
+            type="button"
+            onClick={onOpenSimpleGeneration}
+            className="flex min-h-11 items-center rounded-lg px-2 text-left text-sm font-semibold text-cyan-100 hover:bg-cyan-900/40"
+            data-testid="simple-generation-sdxl"
+          >
+            Simple Generation (SDXL)
+          </button>
+          <button
+            type="button"
+            onClick={onOpenAnimaGeneration}
+            className="flex min-h-11 items-center rounded-lg px-2 text-left text-sm font-semibold text-cyan-100 hover:bg-cyan-900/40"
+            data-testid="simple-generation-anima"
+          >
+            Simple Generation (Anima)
+          </button>
+        </div>
+      </div>
 
       <MenuServerSection
         open={menuSectionsOpen.server}

@@ -1,16 +1,17 @@
 import {
   BATCH_COUNT_OPTIONS,
   BATCH_SIZE_OPTIONS,
-  useGenerationForm,
+  useGenerationFormForMode,
 } from '@/hooks/useGenerationForm';
+import type { SimpleGenerationMode } from '@/config/simpleGenerationMode';
 import { useSimpleGeneration } from '@/hooks/useSimpleGeneration';
 
 const selectClass = 'mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-2.5 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-50';
 const labelClass = 'text-xs font-medium text-slate-300';
 
 /** Controls the number of images per prompt and prompts submitted as one batch. */
-export function BatchSettings() {
-  const form = useGenerationForm();
+export function BatchSettings({ mode = 'sdxl' }: { mode?: SimpleGenerationMode }) {
+  const form = useGenerationFormForMode(mode);
   const {
     activePromptIds,
     isGenerating,

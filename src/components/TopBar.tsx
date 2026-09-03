@@ -16,11 +16,13 @@ import { TopBarTitle } from './TopBar/Title';
 import { OutputsSourceToggle } from './TopBar/OutputsSourceToggle';
 import { TopBarPanelNavigation } from './TopBar/PanelNavigation';
 import type { PanelMode } from '@/hooks/useNavigation';
+import type { SimpleGenerationMode } from '@/config/simpleGenerationMode';
 import { useWorkflowHiddenStore } from '@/hooks/useWorkflowHidden';
 import { isWorkflowHidden } from '@/utils/workflowHidden';
 
 interface TopBarProps {
   mode?: PanelMode;
+  generationMode?: SimpleGenerationMode;
 }
 
 function getScrollSelectors(mode: TopBarProps['mode']): string[] {
@@ -36,7 +38,7 @@ function getScrollSelectors(mode: TopBarProps['mode']): string[] {
   }
 }
 
-export function TopBar({ mode = 'workflow' }: TopBarProps) {
+export function TopBar({ mode = 'workflow', generationMode = 'sdxl' }: TopBarProps) {
   const barRef = useRef<HTMLDivElement>(null);
   const lastTapRef = useRef<number>(0);
   const appMenuOpen = useAppMenuStore((s) => s.appMenuOpen);
@@ -142,7 +144,7 @@ export function TopBar({ mode = 'workflow' }: TopBarProps) {
   const title = useMemo(() => {
     switch (mode) {
       case 'generation':
-        return 'Simple Generation';
+        return `Simple Generation (${generationMode === 'anima' ? 'Anima' : 'SDXL'})`;
       case 'queue':
         return 'Queue';
       case 'outputs':
@@ -154,7 +156,7 @@ export function TopBar({ mode = 'workflow' }: TopBarProps) {
         }
         return workflow ? 'Untitled' : 'ComfyUI Mobile';
     }
-  }, [mode, outputsSource, currentFilename, workflow]);
+  }, [generationMode, mode, outputsSource, currentFilename, workflow]);
 
   const rightControls = useMemo(() => {
     switch (mode) {

@@ -1,4 +1,5 @@
-import { useGenerationForm } from '@/hooks/useGenerationForm';
+import { useGenerationFormForMode } from '@/hooks/useGenerationForm';
+import type { SimpleGenerationMode } from '@/config/simpleGenerationMode';
 
 function FeatureToggle({
   label,
@@ -21,8 +22,8 @@ function FeatureToggle({
     </label>
   );
 }
-export function FeatureToggles() {
-  const form = useGenerationForm();
+export function FeatureToggles({ mode = 'sdxl' }: { mode?: SimpleGenerationMode }) {
+  const form = useGenerationFormForMode(mode);
   return (
     <section className="space-y-2" aria-labelledby="generation-features">
       <h2 id="generation-features" className="text-sm font-semibold uppercase tracking-wide text-cyan-200">

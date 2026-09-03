@@ -2,7 +2,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Workflow } from '@/api/types';
-import { useGenerationForm } from '@/hooks/useGenerationForm';
+import { useNavigationStore } from '@/hooks/useNavigation';
+import { useAnimaGenerationForm, useGenerationForm } from '@/hooks/useGenerationForm';
 import { useSimpleGenerationStore } from '@/hooks/useSimpleGeneration';
 
 const metadataMocks = vi.hoisted(() => ({
@@ -81,6 +82,8 @@ describe('GenerationPanel image restore', () => {
 
   beforeEach(() => {
     useGenerationForm.getState().reset();
+    useAnimaGenerationForm.getState().reset();
+    useNavigationStore.setState({ currentPanel: 'generation', currentGenerationMode: 'sdxl' });
     useSimpleGenerationStore.setState({ error: null, baseWorkflow: null });
     metadataMocks.extractGenerationMetadataFromImageFile.mockReset();
     container = document.createElement('div');
@@ -93,9 +96,10 @@ describe('GenerationPanel image restore', () => {
     container.remove();
   });
 
-  async function restore(metadata: unknown): Promise<void> {
+  async function restore(metadata: unknown, mode: 'sdxl' | 'anima' = 'sdxl'): Promise<void> {
     metadataMocks.extractGenerationMetadataFromImageFile.mockResolvedValue(metadata);
-    await act(async () => root.render(<GenerationPanel visible />));
+    useNavigationStore.setState({ currentGenerationMode: mode, currentPanel: 'generation' });
+    await act(async () => root.render(<GenerationPanel visible mode={mode} />));
     const input = container.querySelector('input[type="file"]') as HTMLInputElement | null;
     if (!input) throw new Error('Restore file input was not rendered.');
     Object.defineProperty(input, 'files', {
@@ -159,6 +163,23 @@ describe('GenerationPanel image restore', () => {
     });
 
     expect(useGenerationForm.getState().checkpoint).toBe('workflow-priority.safetensors');
+  });
+
+  it('restores image parameters into the Anima form without changing SDXL state', async () => {
+    await restore({ workflow: null, prompt, found: true, malformed: false }, 'anima');
+
+    expect(useAnimaGenerationForm.getState()).toMatchObject({
+      checkpoint: 'restored/missing.safetensors',
+      positivePrompt: 'restored positive',
+      negativePrompt: 'restored negative',
+      width: 640,
+      height: 768,
+      batchSize: 2,
+    });
+    expect(useGenerationForm.getState().positivePrompt)
+      .not.toBe('restored positive');
+    expect(useSimpleGenerationStore.getState().contexts.anima.baseWorkflow?.extra)
+      .toMatchObject({ mobile_generation_profile: { workflowKind: 'anima' } });
   });
 
   it('reports malformed metadata with a dedicated error', async () => {

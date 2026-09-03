@@ -5,16 +5,25 @@ import * as api from '@/api/client';
 import {
   MAX_BATCH_COUNT,
   MIN_BATCH_COUNT,
-  useGenerationForm,
+  getGenerationFormStore,
+  useGenerationFormForMode,
   type GenerationFormState,
 } from '@/hooks/useGenerationForm';
+import {
+  DEFAULT_SIMPLE_GENERATION_MODE,
+  type SimpleGenerationMode,
+} from '@/config/simpleGenerationMode';
 import type { CheckpointLoadStatus } from '@/hooks/useCheckpoints';
 import { useHistoryStore } from '@/hooks/useHistory';
 import { useImageViewerStore } from '@/hooks/useImageViewer';
 import { useQueueStore } from '@/hooks/useQueue';
 import { useWorkflowStore } from '@/hooks/useWorkflow';
+import { useNavigationStore } from '@/hooks/useNavigation';
 import { buildPromptFromWorkflow } from '@/utils/buildPromptFromWorkflow';
-import { applyGenerationFormToWorkflow } from '@/utils/applyGenerationFormToWorkflow';
+import {
+  applyGenerationFormToAnimaWorkflow,
+  applyGenerationFormToSdxlWorkflow,
+} from '@/utils/applyGenerationFormToWorkflow';
 import { validateGenerationForm } from '@/utils/generationFormValidation';
 import { MAX_GENERATION_SEED, resolveGenerationSeed } from '@/utils/generationSeed';
 import { QUEUE_WORKFLOW_LABEL_EXTRA_DATA_KEY } from '@/utils/queueWorkflowLabel';
@@ -28,6 +37,7 @@ export interface SimpleGenerationContext {
 }
 
 interface SimpleGenerationState extends SimpleGenerationContext {
+  contexts: Record<SimpleGenerationMode, SimpleGenerationContext>;
   isGenerating: boolean;
   isCancelling: boolean;
   cancelRequested: boolean;
@@ -40,6 +50,7 @@ interface SimpleGenerationState extends SimpleGenerationContext {
   activePromptIds: string[];
   error: string | null;
   setContext: (context: SimpleGenerationContext) => void;
+  setContextForMode: (mode: SimpleGenerationMode, context: SimpleGenerationContext) => void;
   setError: (error: string | null) => void;
   generate: () => Promise<boolean>;
   cancelGeneration: () => Promise<boolean>;
@@ -53,6 +64,15 @@ const initialContext: SimpleGenerationContext = {
   checkpoints: [],
   checkpointsStatus: 'loading',
 };
+
+const initialContexts: Record<SimpleGenerationMode, SimpleGenerationContext> = {
+  sdxl: initialContext,
+  anima: initialContext,
+};
+
+function currentGenerationMode(): SimpleGenerationMode {
+  return useNavigationStore.getState().currentGenerationMode ?? DEFAULT_SIMPLE_GENERATION_MODE;
+}
 
 function boundedBatchCount(value: number): number {
   if (!Number.isFinite(value)) return MIN_BATCH_COUNT;
@@ -195,13 +215,24 @@ async function cancelTrackedPromptIds(activePromptIds: readonly string[]): Promi
 /** Shared state for the Simple Generation form and its BottomBar action. */
 export const useSimpleGenerationStore = create<SimpleGenerationState>((set, get) => ({
   ...initialContext,
+  contexts: initialContexts,
   isGenerating: false,
   isCancelling: false,
   cancelRequested: false,
   cancellationBlocked: false,
   activePromptIds: [],
   error: null,
-  setContext: (context) => set(context),
+  setContext: (context) => set((state) => {
+    const mode = currentGenerationMode();
+    return {
+      ...context,
+      contexts: { ...state.contexts, [mode]: context },
+    };
+  }),
+  setContextForMode: (mode, context) => set((state) => ({
+    contexts: { ...state.contexts, [mode]: context },
+    ...(currentGenerationMode() === mode ? context : {}),
+  })),
   setError: (error) => set({ error }),
   openLatestImage: () => {
     const images = buildOutputPreferredViewerImages(
@@ -228,24 +259,26 @@ export const useSimpleGenerationStore = create<SimpleGenerationState>((set, get)
     const state = get();
     if (state.isGenerating || state.isCancelling || state.cancellationBlocked) return false;
 
-    const form = useGenerationForm.getState();
+    const mode = currentGenerationMode();
+    const context = state.contexts[mode] ?? state;
+    const form = getGenerationFormStore(mode).getState();
     const validationErrors = validateGenerationForm(
       form,
-      state.checkpointsStatus === 'loaded' ? state.checkpoints : undefined,
+      context.checkpointsStatus === 'loaded' ? context.checkpoints : undefined,
     );
     if (validationErrors.length > 0) {
       set({ error: validationErrors[0] ?? 'Fix the form errors before generating.' });
       return false;
     }
-    if (!state.baseWorkflow) {
+    if (!context.baseWorkflow) {
       set({ error: 'The bundled mobile workflow is unavailable.' });
       return false;
     }
-    if (!state.nodeTypes) {
+    if (!context.nodeTypes) {
       set({ error: 'Node definitions are still loading. Try again in a moment.' });
       return false;
     }
-    if (state.checkpointsStatus !== 'loaded') {
+    if (context.checkpointsStatus !== 'loaded') {
       set({ error: 'Checkpoints are still loading. Try again in a moment.' });
       return false;
     }
@@ -264,12 +297,14 @@ export const useSimpleGenerationStore = create<SimpleGenerationState>((set, get)
         if (get().cancelRequested) break;
 
         const resolvedSeed = resolveBatchSeed(form, batchIndex);
-        const executionWorkflow = applyGenerationFormToWorkflow(
+        const executionWorkflow = (mode === 'anima'
+          ? applyGenerationFormToAnimaWorkflow
+          : applyGenerationFormToSdxlWorkflow)(
           form,
-          state.baseWorkflow,
+          context.baseWorkflow,
           resolvedSeed,
         );
-        const prompt = buildPromptFromWorkflow(executionWorkflow, state.nodeTypes);
+        const prompt = buildPromptFromWorkflow(executionWorkflow, context.nodeTypes);
         const request: api.PromptQueueRequest = {
           prompt,
           client_id: api.clientId,
@@ -441,11 +476,13 @@ if (typeof useHistoryStore.subscribe === 'function') {
 
 /** Read the shared submit state and derive the current form's disabled status. */
 export function useSimpleGeneration() {
-  const form = useGenerationForm();
-  const baseWorkflow = useSimpleGenerationStore((state) => state.baseWorkflow);
-  const nodeTypes = useSimpleGenerationStore((state) => state.nodeTypes);
-  const checkpoints = useSimpleGenerationStore((state) => state.checkpoints);
-  const checkpointsStatus = useSimpleGenerationStore((state) => state.checkpointsStatus);
+  const mode = useNavigationStore((state) => state.currentGenerationMode ?? DEFAULT_SIMPLE_GENERATION_MODE);
+  const form = useGenerationFormForMode(mode);
+  const context = useSimpleGenerationStore((state) => state.contexts[mode]);
+  const baseWorkflow = context.baseWorkflow;
+  const nodeTypes = context.nodeTypes;
+  const checkpoints = context.checkpoints;
+  const checkpointsStatus = context.checkpointsStatus;
   const isGenerating = useSimpleGenerationStore((state) => state.isGenerating);
   const isCancelling = useSimpleGenerationStore((state) => state.isCancelling);
   const cancelRequested = useSimpleGenerationStore((state) => state.cancelRequested);

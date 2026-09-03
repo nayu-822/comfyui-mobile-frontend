@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import type { SimpleGenerationMode } from '@/config/simpleGenerationMode';
 
 export type LoraSlot = {
   enabled: boolean;
@@ -98,10 +99,16 @@ export const DEFAULT_GENERATION_FORM_STATE: GenerationFormState = {
   upscaleModel: '4x-UltraSharp.pth',
 };
 
-function cloneDefaultState(): GenerationFormState {
+/** Defaults for Anima are kept separate so a mode switch never aliases form state. */
+export const DEFAULT_ANIMA_GENERATION_FORM_STATE: GenerationFormState = {
+  ...DEFAULT_GENERATION_FORM_STATE,
+  checkpoint: 'PUT_ANIMA_CHECKPOINT_HERE.safetensors',
+};
+
+function cloneDefaultState(defaultState: GenerationFormState): GenerationFormState {
   return {
-    ...DEFAULT_GENERATION_FORM_STATE,
-    loras: DEFAULT_GENERATION_FORM_STATE.loras.map((slot) => ({ ...slot })) as LoraSlots,
+    ...defaultState,
+    loras: defaultState.loras.map((slot) => ({ ...slot })) as LoraSlots,
   };
 }
 
@@ -155,32 +162,74 @@ function persistedGenerationFormState(state: GenerationFormStore): GenerationFor
   };
 }
 
-/** State for the mobile-first generation form. It intentionally has no workflow graph data. */
-export const useGenerationForm = create<GenerationFormStore>()(
-  persist(
-    (set) => ({
-      ...cloneDefaultState(),
-      setField: (field, value) => set({ [field]: value } as Partial<GenerationFormState>),
-      setLora: (index, patch) => set((state) => {
-        const loras = [...state.loras] as LoraSlots;
-        loras[index] = { ...loras[index], ...patch };
-        return { loras };
-      }),
-      patch: (values) => set((state) => ({
-        ...values,
-        ...(values.loras
-          ? { loras: values.loras.map((slot) => ({ ...slot })) as LoraSlots }
-          : { loras: state.loras }),
-      })),
-      reset: () => set(cloneDefaultState()),
-    }),
-    {
-      name: 'simple-generation-form-storage',
-      // Generation settings should survive SPA panel navigation and a
-      // component remount, but remain session-local rather than becoming a
-      // long-lived user preference.
-      storage: createJSONStorage(() => sessionStorage),
-      partialize: persistedGenerationFormState,
+function createSessionStorageWithLegacyFallback(storageKey: string, legacyKey?: string): Storage {
+  return {
+    getItem: (key) => sessionStorage.getItem(key) ?? (legacyKey ? sessionStorage.getItem(legacyKey) : null),
+    setItem: (key, value) => sessionStorage.setItem(key, value),
+    removeItem: (key) => sessionStorage.removeItem(key),
+    clear: () => sessionStorage.clear(),
+    get length() {
+      return sessionStorage.length;
     },
-  ),
+    key: (index) => sessionStorage.key(index),
+  };
+}
+
+function createGenerationFormStore(
+  storageKey: string,
+  defaultState: GenerationFormState,
+  legacyStorageKey?: string,
+) {
+  return create<GenerationFormStore>()(
+    persist(
+      (set) => ({
+        ...cloneDefaultState(defaultState),
+        setField: (field, value) => set({ [field]: value } as Partial<GenerationFormState>),
+        setLora: (index, patch) => set((state) => {
+          const loras = [...state.loras] as LoraSlots;
+          loras[index] = { ...loras[index], ...patch };
+          return { loras };
+        }),
+        patch: (values) => set((state) => ({
+          ...values,
+          ...(values.loras
+            ? { loras: values.loras.map((slot) => ({ ...slot })) as LoraSlots }
+            : { loras: state.loras }),
+        })),
+        reset: () => set(cloneDefaultState(defaultState)),
+      }),
+      {
+        name: storageKey,
+        // Generation settings should survive SPA panel navigation and a
+        // component remount, but remain session-local rather than becoming a
+        // long-lived user preference. Each generation mode has its own key.
+        storage: createJSONStorage(() => createSessionStorageWithLegacyFallback(storageKey, legacyStorageKey)),
+        partialize: persistedGenerationFormState,
+      },
+    ),
+  );
+}
+
+/** State for the SDXL mobile-first generation form. It intentionally has no workflow graph data. */
+export const useGenerationForm = createGenerationFormStore(
+  'generation-form-sdxl',
+  DEFAULT_GENERATION_FORM_STATE,
+  'simple-generation-form-storage',
 );
+
+/** State for the Anima mobile-first generation form. */
+export const useAnimaGenerationForm = createGenerationFormStore(
+  'generation-form-anima',
+  DEFAULT_ANIMA_GENERATION_FORM_STATE,
+);
+
+export function getGenerationFormStore(mode: SimpleGenerationMode) {
+  return mode === 'anima' ? useAnimaGenerationForm : useGenerationForm;
+}
+
+/** Subscribe to both stores and expose the form for the currently rendered mode. */
+export function useGenerationFormForMode(mode: SimpleGenerationMode): GenerationFormStore {
+  const sdxlForm = useGenerationForm();
+  const animaForm = useAnimaGenerationForm();
+  return mode === 'anima' ? animaForm : sdxlForm;
+}

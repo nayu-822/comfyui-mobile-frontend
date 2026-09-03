@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import type { Workflow } from '@/api/types';
-import { useGenerationForm } from '@/hooks/useGenerationForm';
+import { useGenerationFormForMode } from '@/hooks/useGenerationForm';
+import type { SimpleGenerationMode } from '@/config/simpleGenerationMode';
 import { useCheckpoints } from '@/hooks/useCheckpoints';
 import { useLoras } from '@/hooks/useLoras';
 import { useWorkflowStore } from '@/hooks/useWorkflow';
 import { useSimpleGenerationStore } from '@/hooks/useSimpleGeneration';
 import defaultWorkflowAsset from '@/workflows/mobile_sdxl_default.json';
+import animaWorkflowAsset from '@/workflows/mobile_anima_default.json';
 import { generationParamsFromWorkflow } from '@/utils/generationParamsFromWorkflow';
 import { validateGenerationForm } from '@/utils/generationFormValidation';
 import { getCheckpointAutoSelection } from '@/utils/checkpointSelection';
@@ -28,8 +30,14 @@ function cloneWorkflow(workflow: Workflow): Workflow {
   return JSON.parse(JSON.stringify(workflow)) as Workflow;
 }
 
-export function GenerationPanel({ visible }: { visible: boolean }) {
-  const form = useGenerationForm();
+export function GenerationPanel({
+  visible,
+  mode = 'sdxl',
+}: {
+  visible: boolean;
+  mode?: SimpleGenerationMode;
+}) {
+  const form = useGenerationFormForMode(mode);
   const {
     checkpoints,
     status: checkpointsStatus,
@@ -44,25 +52,33 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
   } = useLoras();
   const nodeTypes = useWorkflowStore((state) => state.nodeTypes);
   const baseWorkflow = useMemo(() => {
-    if (!isWorkflow(defaultWorkflowAsset)) return null;
-    return cloneWorkflow(defaultWorkflowAsset as unknown as Workflow);
-  }, []);
-  const loadError = baseWorkflow ? null : 'The bundled mobile generation workflow is malformed.';
+    const workflowAsset = mode === 'anima' ? animaWorkflowAsset : defaultWorkflowAsset;
+    if (!isWorkflow(workflowAsset)) return null;
+    return cloneWorkflow(workflowAsset as unknown as Workflow);
+  }, [mode]);
+  const workflowFilename = mode === 'anima'
+    ? 'mobile_anima_default.json'
+    : 'mobile_sdxl_default.json';
+  const modeLabel = mode === 'anima' ? 'Anima' : 'SDXL';
+  const loadError = baseWorkflow
+    ? null
+    : `The bundled ${modeLabel} mobile generation workflow is malformed.`;
   const setError = useSimpleGenerationStore((state) => state.setError);
-  const setGenerationContext = useSimpleGenerationStore((state) => state.setContext);
+  const setGenerationContext = useSimpleGenerationStore((state) => state.setContextForMode);
   const restoreInputRef = useRef<HTMLInputElement>(null);
   const [restoredCheckpointValue, setRestoredCheckpointValue] = useState<string | null>(null);
   const checkpoint = form.checkpoint;
   const setField = form.setField;
 
   useEffect(() => {
-    setGenerationContext({
+    if (!visible) return;
+    setGenerationContext(mode, {
       baseWorkflow,
       nodeTypes,
       checkpoints,
       checkpointsStatus,
     });
-  }, [baseWorkflow, checkpoints, checkpointsStatus, nodeTypes, setGenerationContext]);
+  }, [baseWorkflow, checkpoints, checkpointsStatus, mode, nodeTypes, setGenerationContext, visible]);
 
   useEffect(() => {
     if (checkpointsStatus !== 'loaded') return;
@@ -124,9 +140,9 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
     >
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
         <div className="rounded-xl border border-cyan-400/20 bg-cyan-950/20 px-3 py-3 text-sm text-slate-300">
-          <div className="font-semibold text-cyan-200">Simple image generation</div>
+          <div className="font-semibold text-cyan-200">Simple image generation ({modeLabel})</div>
           <div className="mt-1 text-xs text-slate-400">
-            Uses <code className="text-cyan-100">mobile_sdxl_default.json</code> while keeping the normal Workflow panel unchanged.
+            Uses <code className="text-cyan-100">{workflowFilename}</code> while keeping the normal Workflow panel unchanged.
           </div>
         </div>
 
@@ -154,8 +170,9 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
           lorasStatus={lorasStatus}
           loraError={loraError}
           onReloadLoras={reloadLoras}
+          mode={mode}
         />
-        <FeatureToggles />
+        <FeatureToggles mode={mode} />
 
         <div className="flex flex-col gap-2">
           <button
@@ -174,8 +191,8 @@ export function GenerationPanel({ visible }: { visible: boolean }) {
           />
         </div>
 
-        <AdvancedSettings nodeTypes={nodeTypes} />
-        <BatchSettings />
+        <AdvancedSettings nodeTypes={nodeTypes} mode={mode} />
+        <BatchSettings mode={mode} />
       </div>
     </div>
   );

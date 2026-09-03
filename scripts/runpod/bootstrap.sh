@@ -11,6 +11,8 @@ MOBILE_CUSTOM_NODE_DIR="${MOBILE_CUSTOM_NODE_DIR:-${COMFYUI_DIR}/custom_nodes/co
 CANONICAL_WORKFLOW_SRC="${CANONICAL_WORKFLOW_SRC:-${MOBILE_FRONTEND_SRC}/src/workflows/mobile_sdxl_default.json}"
 COMFYUI_WORKFLOW_DIR="${COMFYUI_WORKFLOW_DIR:-${COMFYUI_DIR}/user/default/workflows}"
 COMFYUI_CANONICAL_WORKFLOW="${COMFYUI_CANONICAL_WORKFLOW:-${COMFYUI_WORKFLOW_DIR}/mobile_sdxl_default.json}"
+ANIMA_WORKFLOW_SRC="${ANIMA_WORKFLOW_SRC:-${MOBILE_FRONTEND_SRC}/src/workflows/mobile_anima_default.json}"
+COMFYUI_ANIMA_WORKFLOW="${COMFYUI_ANIMA_WORKFLOW:-${COMFYUI_WORKFLOW_DIR}/mobile_anima_default.json}"
 
 RCLONE_REMOTE_NAME="${RCLONE_REMOTE_NAME:-gdrive}"
 RCLONE_CONFIG="${RCLONE_CONFIG:-${RCLONE_CONFIG_PATH:-/tmp/rclone.conf}}"
@@ -757,11 +759,12 @@ start_post_start_health_check() {
       if [[ "$health_mobile_status" == 2?? ]] && \
         grep -Fq '"FaceDetailer"' <<<"$health_object_info" && \
         grep -Fq '"UltralyticsDetectorProvider"' <<<"$health_object_info" && \
-        grep -Fq 'mobile_sdxl_default.json' <<<"$health_workflow_data"; then
+        grep -Fq 'mobile_sdxl_default.json' <<<"$health_workflow_data" && \
+        grep -Fq 'mobile_anima_default.json' <<<"$health_workflow_data"; then
         log "required node available: FaceDetailer"
         log "required node available: UltralyticsDetectorProvider"
         log "mobile frontend route is available: /mobile/"
-        log "canonical workflow is available"
+        log "SDXL and Anima canonical workflows are available"
         exit 0
       fi
       sleep 2
@@ -783,9 +786,14 @@ start_post_start_health_check() {
       log "mobile frontend route is unavailable after startup: /mobile/ (HTTP $health_mobile_status)"
     fi
     if grep -Fq 'mobile_sdxl_default.json' <<<"$health_workflow_data"; then
-      log "canonical workflow is available"
+      log "SDXL canonical workflow is available"
     else
-      log "canonical workflow is unavailable after startup"
+      log "SDXL canonical workflow is unavailable after startup"
+    fi
+    if grep -Fq 'mobile_anima_default.json' <<<"$health_workflow_data"; then
+      log "Anima canonical workflow is available"
+    else
+      log "Anima canonical workflow is unavailable after startup"
     fi
     log "post-start health check timed out after ${STARTUP_HEALTH_CHECK_TIMEOUT_SECONDS}s"
   ) >> "$HEALTH_CHECK_LOG" 2>&1 &
@@ -912,6 +920,29 @@ register_canonical_workflow() {
   log "registered canonical workflow: $COMFYUI_CANONICAL_WORKFLOW"
 }
 
+register_anima_workflow() {
+  [[ -f "$ANIMA_WORKFLOW_SRC" ]] || {
+    log "Anima canonical workflow is missing: $ANIMA_WORKFLOW_SRC"
+    exit 1
+  }
+
+  mkdir -p "$COMFYUI_WORKFLOW_DIR"
+  [[ ! -d "$COMFYUI_ANIMA_WORKFLOW" ]] || {
+    log "Anima canonical workflow destination is a directory: $COMFYUI_ANIMA_WORKFLOW"
+    exit 1
+  }
+
+  local temp_path="${COMFYUI_ANIMA_WORKFLOW}.tmp.$$"
+  rm -f -- "$temp_path"
+  cp -- "$ANIMA_WORKFLOW_SRC" "$temp_path"
+  mv -f -- "$temp_path" "$COMFYUI_ANIMA_WORKFLOW"
+  [[ -f "$COMFYUI_ANIMA_WORKFLOW" && ! -L "$COMFYUI_ANIMA_WORKFLOW" ]] || {
+    log "Anima canonical workflow destination is not a regular file: $COMFYUI_ANIMA_WORKFLOW"
+    exit 1
+  }
+  log "registered Anima canonical workflow: $COMFYUI_ANIMA_WORKFLOW"
+}
+
 start_output_sync() {
   if ! is_enabled "$ENABLE_OUTPUT_SYNC"; then
     log "output sync disabled"
@@ -953,6 +984,7 @@ bootstrap_main() {
     "$LORA_DIR" "$UPSCALE_MODEL_DIR" "$DETAILER_DIR"
   install_mobile_frontend
   register_canonical_workflow
+  register_anima_workflow
   sync_gdrive_checkpoints
   migrate_storage_directory "$COMFYUI_DIR/output" "$LOCAL_OUTPUT_DIR" output
   migrate_storage_directory "$COMFYUI_DIR/temp" "$LOCAL_TEMP_DIR" temp

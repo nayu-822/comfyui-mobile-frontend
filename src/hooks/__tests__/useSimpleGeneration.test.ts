@@ -3,7 +3,12 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NodeTypes, Workflow } from '@/api/types';
 import mobileSdxlWorkflowAsset from '@/workflows/mobile_sdxl_default.json';
-import { useGenerationForm } from '../useGenerationForm';
+import mobileAnimaWorkflowAsset from '@/workflows/mobile_anima_default.json';
+import { useNavigationStore } from '../useNavigation';
+import {
+  useAnimaGenerationForm,
+  useGenerationForm,
+} from '../useGenerationForm';
 
 const apiMocks = vi.hoisted(() => ({
   clientId: 'test-client',
@@ -86,6 +91,7 @@ const emptyWorkflow: Workflow = {
 };
 
 const canonicalWorkflow = mobileSdxlWorkflowAsset as unknown as Workflow;
+const animaWorkflow = mobileAnimaWorkflowAsset as unknown as Workflow;
 const canonicalNodeTypes = Object.fromEntries(
   [...new Set(canonicalWorkflow.nodes.map((node) => node.type))].map((type) => [type, {
     input: { required: {}, optional: {} },
@@ -110,11 +116,27 @@ function seedFromRequest(request: unknown): unknown {
 describe('useSimpleGeneration shared submit state', () => {
   beforeEach(() => {
     useGenerationForm.getState().reset();
+    useAnimaGenerationForm.getState().reset();
+    useNavigationStore.setState({ currentPanel: 'generation', currentGenerationMode: 'sdxl' });
     useSimpleGenerationStore.setState({
       baseWorkflow: null,
       nodeTypes: null,
       checkpoints: [],
       checkpointsStatus: 'loading',
+      contexts: {
+        sdxl: {
+          baseWorkflow: null,
+          nodeTypes: null,
+          checkpoints: [],
+          checkpointsStatus: 'loading',
+        },
+        anima: {
+          baseWorkflow: null,
+          nodeTypes: null,
+          checkpoints: [],
+          checkpointsStatus: 'loading',
+        },
+      },
       isGenerating: false,
       isCancelling: false,
       cancelRequested: false,
@@ -146,6 +168,8 @@ describe('useSimpleGeneration shared submit state', () => {
 
   afterEach(() => {
     useGenerationForm.getState().reset();
+    useAnimaGenerationForm.getState().reset();
+    useNavigationStore.setState({ currentPanel: 'generation', currentGenerationMode: 'sdxl' });
   });
 
   it('lets BottomBar-owned UI submit the current form through shared state', async () => {
@@ -204,6 +228,66 @@ describe('useSimpleGeneration shared submit state', () => {
     await expect(useSimpleGenerationStore.getState().generate()).resolves.toBe(true);
 
     expect(useSimpleGenerationStore.getState().activePromptIds).toEqual(['prompt-a', 'prompt-b']);
+  });
+
+  it('queues the Anima form through the Anima canonical workflow', async () => {
+    useNavigationStore.setState({ currentGenerationMode: 'anima', currentPanel: 'generation' });
+    useAnimaGenerationForm.getState().patch({
+      checkpoint: 'models/anima.safetensors',
+      positivePrompt: 'anima prompt',
+      seedMode: 'fixed',
+      seed: 42,
+    });
+    useSimpleGenerationStore.getState().setContextForMode('anima', {
+      baseWorkflow: animaWorkflow,
+      nodeTypes: canonicalNodeTypes,
+      checkpoints: ['models/anima.safetensors'],
+      checkpointsStatus: 'loaded',
+    });
+    apiMocks.queuePrompt.mockReset().mockResolvedValue({ prompt_id: 'anima-prompt', number: 1 });
+
+    await expect(useSimpleGenerationStore.getState().generate()).resolves.toBe(true);
+
+    const request = apiMocks.queuePrompt.mock.calls[0]?.[0] as {
+      extra_data?: { extra_pnginfo?: { workflow?: Workflow } };
+    };
+    expect(request.extra_data?.extra_pnginfo?.workflow?.extra)
+      .toMatchObject({ mobile_generation_profile: { workflowKind: 'anima' } });
+    const animaCheckpointWidgets = request.extra_data?.extra_pnginfo?.workflow?.nodes.find(
+      (node) => node.title === 'MOBILE_CHECKPOINT',
+    )?.widgets_values;
+    expect(Array.isArray(animaCheckpointWidgets) ? animaCheckpointWidgets[0] : undefined)
+      .toBe('models/anima.safetensors');
+    expect(useGenerationForm.getState().positivePrompt).not.toBe('anima prompt');
+  });
+
+  it('queues the SDXL form through the SDXL canonical workflow', async () => {
+    useGenerationForm.getState().patch({
+      checkpoint: 'models/sdxl.safetensors',
+      positivePrompt: 'sdxl prompt',
+      seedMode: 'fixed',
+      seed: 42,
+    });
+    useSimpleGenerationStore.getState().setContextForMode('sdxl', {
+      baseWorkflow: canonicalWorkflow,
+      nodeTypes: canonicalNodeTypes,
+      checkpoints: ['models/sdxl.safetensors'],
+      checkpointsStatus: 'loaded',
+    });
+    apiMocks.queuePrompt.mockReset().mockResolvedValue({ prompt_id: 'sdxl-prompt', number: 1 });
+
+    await expect(useSimpleGenerationStore.getState().generate()).resolves.toBe(true);
+
+    const request = apiMocks.queuePrompt.mock.calls[0]?.[0] as {
+      extra_data?: { extra_pnginfo?: { workflow?: Workflow } };
+    };
+    expect(request.extra_data?.extra_pnginfo?.workflow?.extra)
+      .toMatchObject({ mobile_generation_profile: { workflowKind: 'sdxl' } });
+    const sdxlCheckpointWidgets = request.extra_data?.extra_pnginfo?.workflow?.nodes.find(
+      (node) => node.title === 'MOBILE_CHECKPOINT',
+    )?.widgets_values;
+    expect(Array.isArray(sdxlCheckpointWidgets) ? sdxlCheckpointWidgets[0] : undefined)
+      .toBe('models/sdxl.safetensors');
   });
 
   it('keeps active prompt ids while the post-enqueue queue refresh is pending', async () => {

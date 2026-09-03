@@ -41,21 +41,23 @@ The Git-managed workflow is the source of truth:
 ~~~text
 Git source of truth:
 /workspace/comfyui-mobile-frontend-src/src/workflows/mobile_sdxl_default.json
+/workspace/comfyui-mobile-frontend-src/src/workflows/mobile_anima_default.json
 
 ComfyUI registered copy:
 /workspace/runpod-slim/ComfyUI/user/default/workflows/mobile_sdxl_default.json
+/workspace/runpod-slim/ComfyUI/user/default/workflows/mobile_anima_default.json
 ~~~
 
-At Pod startup, the Git-managed copy is atomically copied into ComfyUI's
-workflow directory, so `mobile_sdxl_default` is available directly from the
-ComfyUI Workflow list. The registered file is a regular file, not a symlink.
-Only `mobile_sdxl_default.json` is replaced; other user workflows are neither
-changed nor deleted.
+At Pod startup, both Git-managed copies are atomically copied into ComfyUI's
+workflow directory, so `mobile_sdxl_default` and `mobile_anima_default` are
+available directly from the ComfyUI Workflow list. The registered files are
+regular files, not symlinks. Only these two canonical files are replaced;
+other user workflows are neither changed nor deleted.
 
 Editing and saving the registered copy in ComfyUI does not permanently change
 the canonical workflow. It is overwritten by the Git version at the next Pod
 startup. To make a permanent change, edit
-`src/workflows/mobile_sdxl_default.json` and commit it to Git.
+the appropriate file under `src/workflows/` and commit it to Git.
 
 ## RunPod Template bootstrap
 
@@ -225,6 +227,8 @@ Other controls:
 - `CANONICAL_WORKFLOW_SRC` (default: `${MOBILE_FRONTEND_SRC}/src/workflows/mobile_sdxl_default.json`)
 - `COMFYUI_WORKFLOW_DIR` (default: `${COMFYUI_DIR}/user/default/workflows`)
 - `COMFYUI_CANONICAL_WORKFLOW` (default: `${COMFYUI_WORKFLOW_DIR}/mobile_sdxl_default.json`)
+- `ANIMA_WORKFLOW_SRC` (default: `${MOBILE_FRONTEND_SRC}/src/workflows/mobile_anima_default.json`)
+- `COMFYUI_ANIMA_WORKFLOW` (default: `${COMFYUI_WORKFLOW_DIR}/mobile_anima_default.json`)
 - `COMFYUI_ARGS_FILE` (default: `${RUNPOD_SLIM_DIR}/comfyui_args.txt`)
 - `RUNTIME_PIP_CONSTRAINT_FILE` (default: `/opt/comfyui-runtime-constraints.txt`)
 - `ENABLE_COMFYUI_MANAGER` (default: `true`)

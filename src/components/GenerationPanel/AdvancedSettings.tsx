@@ -7,9 +7,10 @@ import {
 } from '@/config/generationOptions';
 import {
   HIRES_RESIZE_METHODS,
-  useGenerationForm,
+  useGenerationFormForMode,
   type HiresResizeMethod,
 } from '@/hooks/useGenerationForm';
+import type { SimpleGenerationMode } from '@/config/simpleGenerationMode';
 import { isEmptyOrPlaceholderModelName } from '@/utils/generationFormValidation';
 import { EditableNumberInput } from './EditableNumberInput';
 
@@ -98,8 +99,14 @@ function Section({
   );
 }
 
-export function AdvancedSettings({ nodeTypes = null }: { nodeTypes?: NodeTypes | null } = {}) {
-  const form = useGenerationForm();
+export function AdvancedSettings({
+  nodeTypes = null,
+  mode = 'sdxl',
+}: {
+  nodeTypes?: NodeTypes | null;
+  mode?: SimpleGenerationMode;
+} = {}) {
+  const form = useGenerationFormForMode(mode);
   const set = form.setField;
   const samplerOptions = getSamplerOptions(nodeTypes, form.sampler);
   const schedulerOptions = getSchedulerOptions(nodeTypes, form.scheduler);

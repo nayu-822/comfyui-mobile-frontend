@@ -22,6 +22,7 @@ import { readWorkflowFromFile } from '@/utils/workflowFromFile';
 import { useNoWorkflowImageModal } from '@/hooks/useNoWorkflowImageModal';
 import { useCustomNodesManager } from '@/hooks/useCustomNodesManager';
 import { useNavigationStore } from '@/hooks/useNavigation';
+import type { SimpleGenerationMode } from '@/config/simpleGenerationMode';
 import { t as globalT, useI18n } from '@/i18n';
 import type { CustomNodeFilterValue } from '@/utils/customNodesManager';
 import type { Workflow } from '@/api/types';
@@ -102,6 +103,7 @@ export function AppMenu({
   const originalWorkflow = useWorkflowStore((s) => s.originalWorkflow);
   const setSavedWorkflow = useWorkflowStore((s) => s.setSavedWorkflow);
   const setCurrentPanel = useNavigationStore((s) => s.setCurrentPanel);
+  const setCurrentGenerationMode = useNavigationStore((s) => s.setCurrentGenerationMode);
   const pasteTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isDirty = isWorkflowModified(workflow, originalWorkflow);
@@ -507,7 +509,17 @@ export function AppMenu({
           onOpenLegend={() => setActiveTab('aboutLegend')}
           onRestartServer={handleRestartServer}
           onOpenGenerationSettings={() => setActiveTab('generationSettings')}
-          onOpenSimpleGeneration={() => { setCurrentPanel('generation'); onClose(); }}
+          onOpenSimpleGeneration={() => {
+            setCurrentGenerationMode('sdxl');
+            setCurrentPanel('generation');
+            onClose();
+          }}
+          onOpenAnimaGeneration={() => {
+            const mode: SimpleGenerationMode = 'anima';
+            setCurrentGenerationMode(mode);
+            setCurrentPanel('generation');
+            onClose();
+          }}
           onOpenCustomNodes={() => { setCustomNodesInitialFilter(''); setCustomNodesInitialSearch(''); setCustomNodesOpen(true); }}
         />
       )}

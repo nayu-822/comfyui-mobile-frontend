@@ -1,4 +1,9 @@
-import { useGenerationForm, type GenerationFormState, type LoraSlot } from '@/hooks/useGenerationForm';
+import {
+  useGenerationFormForMode,
+  type GenerationFormState,
+  type LoraSlot,
+} from '@/hooks/useGenerationForm';
+import type { SimpleGenerationMode } from '@/config/simpleGenerationMode';
 import type { CheckpointLoadStatus } from '@/hooks/useCheckpoints';
 import type { LoraLoadStatus } from '@/hooks/useLoras';
 import { isEmptyOrPlaceholderModelName } from '@/utils/generationFormValidation';
@@ -18,6 +23,7 @@ export interface BasicSettingsProps {
   lorasStatus: LoraLoadStatus;
   loraError: string | null;
   onReloadLoras: () => void;
+  mode?: SimpleGenerationMode;
 }
 
 function LoraCard({
@@ -27,6 +33,7 @@ function LoraCard({
   lorasStatus,
   loraError,
   onReloadLoras,
+  mode,
 }: {
   index: 0 | 1 | 2;
   slot: LoraSlot;
@@ -34,8 +41,10 @@ function LoraCard({
   lorasStatus: LoraLoadStatus;
   loraError: string | null;
   onReloadLoras: () => void;
+  mode: SimpleGenerationMode;
 }) {
-  const setLora = useGenerationForm((state) => state.setLora);
+  const form = useGenerationFormForMode(mode);
+  const setLora = form.setLora;
   const currentLoraIsListed = loras.includes(slot.name);
   const currentLoraIsUnlisted = Boolean(slot.name) && !currentLoraIsListed;
 
@@ -125,8 +134,9 @@ export function BasicSettings({
   lorasStatus,
   loraError,
   onReloadLoras,
+  mode = 'sdxl',
 }: BasicSettingsProps) {
-  const form = useGenerationForm();
+  const form = useGenerationFormForMode(mode);
   const setField = form.setField;
   const currentCheckpointIsListed = checkpoints.includes(form.checkpoint);
   const currentCheckpointIsUnlisted = Boolean(form.checkpoint) && !currentCheckpointIsListed;
@@ -286,6 +296,7 @@ export function BasicSettings({
               lorasStatus={lorasStatus}
               loraError={loraError}
               onReloadLoras={onReloadLoras}
+              mode={mode}
             />
           ))}
         </div>

@@ -236,6 +236,26 @@ export function applyGenerationFormToWorkflow(
   return workflow;
 }
 
+/** Apply the shared form to the SDXL canonical workflow. */
+export function applyGenerationFormToSdxlWorkflow(
+  form: GenerationFormState,
+  sourceWorkflow: Workflow,
+  resolvedSeed: number = form.seed,
+): Workflow {
+  return applyGenerationFormToWorkflow(form, sourceWorkflow, resolvedSeed);
+}
+
+/** Apply the shared form to the Anima canonical workflow. Its node profile is
+ * intentionally compatible with the SDXL path, so the graph mutation logic
+ * remains shared while the canonical asset stays mode-specific. */
+export function applyGenerationFormToAnimaWorkflow(
+  form: GenerationFormState,
+  sourceWorkflow: Workflow,
+  resolvedSeed: number = form.seed,
+): Workflow {
+  return applyGenerationFormToWorkflow(form, sourceWorkflow, resolvedSeed);
+}
+
 function replaceNamedWorkflowInputLink(
   workflow: Workflow,
   targetName: string,
