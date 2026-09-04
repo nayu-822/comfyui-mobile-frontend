@@ -99,10 +99,22 @@ export const DEFAULT_GENERATION_FORM_STATE: GenerationFormState = {
   upscaleModel: '4x-UltraSharp.pth',
 };
 
-/** Defaults for Anima are kept separate so a mode switch never aliases form state. */
+/**
+ * Defaults for Anima are kept separate so a mode switch never aliases form
+ * state. These values follow the native Anima model card recommendation
+ * (er_sde, simple, 30 steps, CFG 4) rather than SDXL's defaults.
+ */
 export const DEFAULT_ANIMA_GENERATION_FORM_STATE: GenerationFormState = {
   ...DEFAULT_GENERATION_FORM_STATE,
-  checkpoint: 'PUT_ANIMA_CHECKPOINT_HERE.safetensors',
+  checkpoint: 'anima-base-v1.0.safetensors',
+  positivePrompt: 'masterpiece, best quality, score_7, safe, 1girl',
+  negativePrompt: 'worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, chromatic aberration',
+  steps: 30,
+  cfg: 4,
+  sampler: 'er_sde',
+  scheduler: 'simple',
+  hiresSampler: 'er_sde',
+  hiresScheduler: 'simple',
 };
 
 function cloneDefaultState(defaultState: GenerationFormState): GenerationFormState {

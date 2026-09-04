@@ -24,6 +24,12 @@ function animaNodeByTitle(title: string): WorkflowNode {
   return node;
 }
 
+function animaLinkById(id: number): WorkflowLink {
+  const link = animaWorkflow.links.find((candidate) => candidate[0] === id);
+  if (!link) throw new Error(`Missing Anima link ${id}`);
+  return link;
+}
+
 describe('mobile_sdxl_default workflow', () => {
   it('contains executable latent and image-resize Hires branches without frontend-only switches', () => {
     expect(workflow.last_node_id).toBe(22);
@@ -64,15 +70,41 @@ describe('mobile_sdxl_default workflow', () => {
 });
 
 describe('mobile_anima_default workflow', () => {
-  it('provides the shared generation features with an Anima-specific profile', () => {
+  it('uses the native split-file Anima architecture and keeps the shared feature graph', () => {
     expect(animaWorkflow.extra).toMatchObject({
       mobile_generation_profile: { workflowKind: 'anima' },
     });
     const checkpointWidgets = animaNodeByTitle('MOBILE_CHECKPOINT').widgets_values;
     expect(Array.isArray(checkpointWidgets) ? checkpointWidgets[0] : undefined)
-      .toBe('PUT_ANIMA_CHECKPOINT_HERE.safetensors');
-    expect(animaWorkflow.nodes).toHaveLength(workflow.nodes.length);
-    expect(animaWorkflow.links).toHaveLength(workflow.links.length);
+      .toBe('anima-base-v1.0.safetensors');
+
+    expect(animaNodeByTitle('MOBILE_CHECKPOINT').type).toBe('UNETLoader');
+    expect(animaNodeByTitle('MOBILE_TEXT_ENCODER').type).toBe('CLIPLoader');
+    expect(animaNodeByTitle('MOBILE_VAE_LOADER').type).toBe('VAELoader');
+    expect(animaWorkflow.nodes.some((node) => node.type === 'CheckpointLoaderSimple')).toBe(false);
+    expect(animaWorkflow.nodes.some((node) => node.type === 'CheckpointLoader')).toBe(false);
+
+    const textEncoderWidgets = animaNodeByTitle('MOBILE_TEXT_ENCODER').widgets_values;
+    expect(Array.isArray(textEncoderWidgets) ? textEncoderWidgets[0] : undefined)
+      .toBe('qwen_3_06b_base.safetensors');
+    const vaeWidgets = animaNodeByTitle('MOBILE_VAE_LOADER').widgets_values;
+    expect(Array.isArray(vaeWidgets) ? vaeWidgets[0] : undefined)
+      .toBe('qwen_image_vae.safetensors');
+
+    expect(animaLinkById(1)).toEqual([1, 1, 0, 2, 0, 'MODEL']);
+    expect(animaLinkById(2)).toEqual([2, 23, 0, 2, 1, 'CLIP']);
+    expect(animaLinkById(19)).toEqual([19, 24, 0, 11, 1, 'VAE']);
+    expect(animaLinkById(23)).toEqual([23, 24, 0, 13, 3, 'VAE']);
+    expect(animaLinkById(31)).toEqual([31, 24, 0, 17, 1, 'VAE']);
+    expect(animaLinkById(34)).toEqual([34, 24, 0, 19, 1, 'VAE']);
+    expect(animaNodeByTitle('MOBILE_LORA_1').inputs[0]?.link).toBe(1);
+    expect(animaNodeByTitle('MOBILE_LORA_1').inputs[1]?.link).toBe(2);
+    expect(animaNodeByTitle('MOBILE_VAE_DECODE').inputs[1]?.link).toBe(19);
+
+    const graphSignature = (candidate: Workflow) => candidate.nodes
+      .map((node) => `${node.type}:${node.title ?? ''}`)
+      .sort();
+    expect(graphSignature(animaWorkflow)).not.toEqual(graphSignature(workflow));
 
     for (const title of [
       'MOBILE_LORA_1',

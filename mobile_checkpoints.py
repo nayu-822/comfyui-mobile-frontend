@@ -13,5 +13,13 @@ def list_model_names(folder_name):
 
 
 def list_checkpoints():
-    """Return checkpoint paths from ComfyUI's own checkpoint registry."""
-    return list_model_names("checkpoints")
+    """Return selectable model paths for both checkpoint and native UNet loaders.
+
+    The simple-generation UI keeps one ``Checkpoint`` field for both modes.
+    SDXL reads it through ``CheckpointLoaderSimple`` while Anima reads it
+    through ComfyUI's native ``UNETLoader``. ComfyUI registers those files in
+    separate folders, so the mobile endpoint must expose their union.
+    """
+    names = set(list_model_names("checkpoints"))
+    names.update(list_model_names("diffusion_models"))
+    return sorted(names, key=lambda name: (name.casefold(), name))

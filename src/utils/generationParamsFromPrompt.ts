@@ -163,7 +163,7 @@ function resizeMethod(value: unknown): HiresResizeMethod | undefined {
 }
 
 const NAMES = {
-  checkpoint: ['MOBILE_CHECKPOINT'],
+  checkpoint: ['MOBILE_CHECKPOINT', 'MOBILE_ANIMA_MODEL'],
   positive: ['MOBILE_POSITIVE'],
   negative: ['MOBILE_NEGATIVE'],
   facePositive: ['MOBILE_FACE_POSITIVE'],
@@ -194,7 +194,7 @@ export function generationParamsFromPrompt(prompt: unknown): GenerationFormPatch
   const checkpoint = findNamedOrClass(
     nodes,
     NAMES.checkpoint,
-    ['CheckpointLoaderSimple', 'CheckpointLoader'],
+    ['CheckpointLoaderSimple', 'CheckpointLoader', 'UNETLoader'],
   );
   const positive = findNamedOrClass(nodes, NAMES.positive, ['CLIPTextEncode']);
   const negative = findNamedOrClass(
@@ -206,7 +206,7 @@ export function generationParamsFromPrompt(prompt: unknown): GenerationFormPatch
   const size = findNamedOrClass(nodes, NAMES.size, ['EmptyLatentImage']);
   const baseSampler = findNamedOrClass(nodes, NAMES.baseSampler, ['KSampler', 'KSamplerAdvanced']);
 
-  const checkpointValue = stringInput(checkpoint, ['ckpt_name', 'checkpoint'], 0);
+  const checkpointValue = stringInput(checkpoint, ['ckpt_name', 'checkpoint', 'unet_name'], 0);
   if (checkpointValue !== undefined) patch.checkpoint = checkpointValue;
   const positiveValue = stringInput(positive, ['text', 'prompt'], 0);
   if (positiveValue !== undefined) patch.positivePrompt = positiveValue;

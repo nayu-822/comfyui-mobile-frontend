@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import type { NodeTypes, Workflow } from '@/api/types';
+import type { NodeTypes, Workflow, WorkflowNode } from '@/api/types';
 import mobileSdxlWorkflowAsset from '@/workflows/mobile_sdxl_default.json';
+import mobileAnimaWorkflowAsset from '@/workflows/mobile_anima_default.json';
 import { DEFAULT_GENERATION_FORM_STATE, type GenerationFormState } from '@/hooks/useGenerationForm';
-import { applyGenerationFormToWorkflow } from '../applyGenerationFormToWorkflow';
+import {
+  applyGenerationFormToAnimaWorkflow,
+  applyGenerationFormToWorkflow,
+} from '../applyGenerationFormToWorkflow';
 import { buildPromptFromWorkflow } from '../buildPromptFromWorkflow';
 import { generationParamsFromWorkflow } from '../generationParamsFromWorkflow';
 
 const canonicalWorkflow = mobileSdxlWorkflowAsset as unknown as Workflow;
+const animaWorkflow = mobileAnimaWorkflowAsset as unknown as Workflow;
 
 function form(overrides: Partial<GenerationFormState> = {}): GenerationFormState {
   return {
@@ -17,9 +22,9 @@ function form(overrides: Partial<GenerationFormState> = {}): GenerationFormState
 }
 
 /** Minimal object_info-shaped definitions are enough to exercise prompt wiring. */
-function canonicalNodeTypes(): NodeTypes {
+function nodeTypesFor(workflow: Workflow): NodeTypes {
   const types = new Set(
-    canonicalWorkflow.nodes
+    workflow.nodes
       .map((node) => node.type)
       .filter((type) => type !== 'ComfySwitchNode'),
   );
@@ -36,7 +41,89 @@ function canonicalNodeTypes(): NodeTypes {
 }
 
 const nodeTypes = {
-  ...canonicalNodeTypes(),
+  ...nodeTypesFor(canonicalWorkflow),
+  CLIPTextEncode: {
+    input: {
+      required: {
+        clip: ['CLIP', {}],
+        text: ['STRING', { default: '' }],
+      },
+    },
+    output: ['CONDITIONING'],
+    name: 'CLIPTextEncode',
+    display_name: 'CLIPTextEncode',
+    description: '',
+    python_module: '',
+    category: '',
+  },
+} as unknown as NodeTypes;
+
+const animaNodeTypes = {
+  ...nodeTypesFor(animaWorkflow),
+  UNETLoader: {
+    input: {
+      required: {
+        unet_name: ['COMBO', { default: 'anima-base-v1.0.safetensors' }],
+        weight_dtype: ['COMBO', { default: 'default' }],
+      },
+    },
+    output: ['MODEL'],
+    name: 'UNETLoader',
+    display_name: 'UNETLoader',
+    description: '',
+    python_module: '',
+    category: '',
+  },
+  CLIPLoader: {
+    input: {
+      required: {
+        clip_name: ['COMBO', { default: 'qwen_3_06b_base.safetensors' }],
+        type: ['COMBO', { default: 'stable_diffusion' }],
+        device: ['COMBO', { default: 'default' }],
+      },
+    },
+    output: ['CLIP'],
+    name: 'CLIPLoader',
+    display_name: 'CLIPLoader',
+    description: '',
+    python_module: '',
+    category: '',
+  },
+  VAELoader: {
+    input: {
+      required: {
+        vae_name: ['COMBO', { default: 'qwen_image_vae.safetensors' }],
+      },
+    },
+    output: ['VAE'],
+    name: 'VAELoader',
+    display_name: 'VAELoader',
+    description: '',
+    python_module: '',
+    category: '',
+  },
+  KSampler: {
+    input: {
+      required: {
+        model: ['MODEL', {}],
+        positive: ['CONDITIONING', {}],
+        negative: ['CONDITIONING', {}],
+        latent_image: ['LATENT', {}],
+        seed: ['INT', { default: 0 }],
+        steps: ['INT', { default: 30 }],
+        cfg: ['FLOAT', { default: 4 }],
+        sampler_name: ['COMBO', { default: 'er_sde' }],
+        scheduler: ['COMBO', { default: 'simple' }],
+        denoise: ['FLOAT', { default: 1 }],
+      },
+    },
+    output: ['LATENT'],
+    name: 'KSampler',
+    display_name: 'KSampler',
+    description: '',
+    python_module: '',
+    category: '',
+  },
   CLIPTextEncode: {
     input: {
       required: {
@@ -231,6 +318,148 @@ describe('simple generation execution graph', () => {
     }
     for (const title of inactiveBranch) {
       expect(prompt[String(nodeId(executionWorkflow, title))]).toBeUndefined();
+    }
+  });
+
+  it('maps the form to Anima native loaders instead of an SDXL checkpoint graph', () => {
+    const executionWorkflow = applyGenerationFormToAnimaWorkflow(form({
+      checkpoint: 'anima-base-v1.0.safetensors',
+      positivePrompt: 'anima positive',
+      negativePrompt: 'anima negative',
+      width: 896,
+      height: 1152,
+      steps: 42,
+      cfg: 4.5,
+      sampler: 'er_sde',
+      scheduler: 'simple',
+    }), animaWorkflow);
+    const prompt = buildPromptFromWorkflow(executionWorkflow, animaNodeTypes);
+
+    const modelId = nodeId(executionWorkflow, 'MOBILE_CHECKPOINT');
+    const textEncoderId = nodeId(executionWorkflow, 'MOBILE_TEXT_ENCODER');
+    const vaeId = nodeId(executionWorkflow, 'MOBILE_VAE_LOADER');
+    const baseSamplerId = nodeId(executionWorkflow, 'MOBILE_BASE_SAMPLER');
+    expect(promptNode(prompt, modelId)).toMatchObject({
+      class_type: 'UNETLoader',
+      inputs: { unet_name: 'anima-base-v1.0.safetensors', weight_dtype: 'default' },
+    });
+    expect(promptNode(prompt, textEncoderId)).toMatchObject({
+      class_type: 'CLIPLoader',
+      inputs: {
+        clip_name: 'qwen_3_06b_base.safetensors',
+        type: 'stable_diffusion',
+        device: 'default',
+      },
+    });
+    expect(promptNode(prompt, vaeId)).toMatchObject({
+      class_type: 'VAELoader',
+      inputs: { vae_name: 'qwen_image_vae.safetensors' },
+    });
+    expect(promptNode(prompt, baseSamplerId).inputs).toMatchObject({
+      steps: 42,
+      cfg: 4.5,
+      sampler_name: 'er_sde',
+      scheduler: 'simple',
+    });
+    expect(promptNode(prompt, nodeId(executionWorkflow, 'MOBILE_POSITIVE')).inputs.text)
+      .toBe('anima positive');
+    expect(promptNode(prompt, nodeId(executionWorkflow, 'MOBILE_NEGATIVE')).inputs.text)
+      .toBe('anima negative');
+    expect(promptNode(prompt, nodeId(executionWorkflow, 'MOBILE_VAE_DECODE')).inputs.vae)
+      .toEqual([String(vaeId), 0]);
+    expect(generationParamsFromWorkflow(executionWorkflow)).toMatchObject({
+      checkpoint: 'anima-base-v1.0.safetensors',
+      positivePrompt: 'anima positive',
+      negativePrompt: 'anima negative',
+      width: 896,
+      height: 1152,
+      steps: 42,
+      cfg: 4.5,
+      sampler: 'er_sde',
+      scheduler: 'simple',
+    });
+    expect(executionWorkflow.nodes.some((node) => node.type === 'CheckpointLoaderSimple')).toBe(false);
+    expect(executionWorkflow.nodes.some((node) => node.type === 'UNETLoader')).toBe(true);
+    assertWorkflowLinkIntegrity(executionWorkflow);
+    assertNoDanglingPromptReferences(prompt);
+  });
+
+  it('maps Anima LoRA, Hires, FaceDetailer, and upscaler values to their nodes', () => {
+    const executionWorkflow = applyGenerationFormToAnimaWorkflow(form({
+      checkpoint: 'anima-base-v1.0.safetensors',
+      loras: [
+        { enabled: true, name: 'style-one.safetensors', strengthModel: 0.7, strengthClip: 0.8 },
+        { enabled: true, name: 'style-two.safetensors', strengthModel: 0.5, strengthClip: 0.6 },
+        { enabled: true, name: 'style-three.safetensors', strengthModel: 0.3, strengthClip: 0.4 },
+      ],
+      hiresEnabled: true,
+      hiresMode: 'resize',
+      hiresScale: 1.75,
+      hiresSteps: 18,
+      hiresCfg: 4.25,
+      hiresDenoise: 0.4,
+      resizeMethod: 'bicubic',
+      faceDetailerEnabled: true,
+      facePositivePrompt: 'face positive',
+      faceNegativePrompt: 'face negative',
+      faceGuideSize: 640,
+      faceMaxSize: 896,
+      faceSteps: 12,
+      faceCfg: 4.5,
+      faceDenoise: 0.25,
+      faceBBoxThreshold: 0.6,
+      upscaleEnabled: true,
+      upscaleModel: '4x-AnimaSharp.pth',
+    }), animaWorkflow);
+
+    const node = (title: string): WorkflowNode => {
+      const result = executionWorkflow.nodes.find((candidate) => candidate.title === title);
+      if (!result) throw new Error(`Missing ${title}`);
+      return result;
+    };
+    expect(node('MOBILE_LORA_1').widgets_values).toEqual(['style-one.safetensors', 0.7, 0.8]);
+    expect(node('MOBILE_LORA_2').widgets_values).toEqual(['style-two.safetensors', 0.5, 0.6]);
+    expect(node('MOBILE_LORA_3').widgets_values).toEqual(['style-three.safetensors', 0.3, 0.4]);
+    expect(node('MOBILE_HIRES_RESIZE_IMAGE').widgets_values).toEqual(['bicubic', 1.75]);
+    expect((node('MOBILE_HIRES_RESIZE_SAMPLER').widgets_values as unknown[]).slice(2, 7))
+      .toEqual([18, 4.25, 'euler_ancestral', 'normal', 0.4]);
+    expect((node('MOBILE_FACE_DETAILER').widgets_values as unknown[]).slice(0, 10))
+      .toEqual([640, true, 896, 123456789, 'fixed', 12, 4.5, 'euler_ancestral', 'normal', 0.25]);
+    expect((node('MOBILE_FACE_DETAILER').widgets_values as unknown[])[13]).toBe(0.6);
+    expect(node('MOBILE_FACE_POSITIVE').widgets_values).toEqual(['face positive']);
+    expect(node('MOBILE_FACE_NEGATIVE').widgets_values).toEqual(['face negative']);
+    expect(node('MOBILE_UPSCALE_MODEL').widgets_values).toEqual(['4x-AnimaSharp.pth']);
+    expect(node('MOBILE_SAVE_IMAGE').widgets_values)
+      .toEqual(['%date:yyyyMMdd%_upscale/mobile_anima']);
+  });
+
+  it.each([
+    { hiresEnabled: false, faceDetailerEnabled: false, upscaleEnabled: false },
+    { hiresEnabled: true, hiresMode: 'latent' as const, faceDetailerEnabled: true, upscaleEnabled: true },
+    { hiresEnabled: true, hiresMode: 'resize' as const, faceDetailerEnabled: false, upscaleEnabled: true },
+    { hiresEnabled: false, faceDetailerEnabled: true, upscaleEnabled: false },
+  ])('keeps Anima feature toggles free of dangling links (%o)', (values) => {
+    const executionWorkflow = applyGenerationFormToAnimaWorkflow(
+      form(values),
+      animaWorkflow,
+    );
+    const prompt = buildPromptFromWorkflow(executionWorkflow, animaNodeTypes);
+
+    assertWorkflowLinkIntegrity(executionWorkflow);
+    assertNoDanglingPromptReferences(prompt);
+    expect(promptNode(prompt, nodeId(executionWorkflow, 'MOBILE_CHECKPOINT')).class_type)
+      .toBe('UNETLoader');
+    if (values.hiresEnabled && values.hiresMode === 'latent') {
+      expect(prompt[String(nodeId(executionWorkflow, 'MOBILE_HIRES_SAMPLER'))]).toBeDefined();
+      expect(prompt[String(nodeId(executionWorkflow, 'MOBILE_HIRES_RESIZE_SAMPLER'))]).toBeUndefined();
+    }
+    if (values.hiresEnabled && values.hiresMode === 'resize') {
+      expect(prompt[String(nodeId(executionWorkflow, 'MOBILE_HIRES_RESIZE_SAMPLER'))]).toBeDefined();
+      expect(prompt[String(nodeId(executionWorkflow, 'MOBILE_HIRES_SAMPLER'))]).toBeUndefined();
+    }
+    if (!values.hiresEnabled) {
+      expect(prompt[String(nodeId(executionWorkflow, 'MOBILE_HIRES_SAMPLER'))]).toBeUndefined();
+      expect(prompt[String(nodeId(executionWorkflow, 'MOBILE_HIRES_RESIZE_SAMPLER'))]).toBeUndefined();
     }
   });
 });

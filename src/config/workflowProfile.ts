@@ -3,6 +3,10 @@ import type { SimpleGenerationMode } from '@/config/simpleGenerationMode';
 
 export interface MobileNodeNames {
   checkpoint: string;
+  /** Native text encoder node used by workflows that do not bundle CLIP in a checkpoint. */
+  textEncoder: string;
+  /** Native VAE loader used by workflows that do not bundle VAE in a checkpoint. */
+  vaeLoader: string;
   loraSlots: [string, string, string];
   positive: string;
   negative: string;
@@ -41,6 +45,8 @@ export interface MobileGenerationProfile {
 
 export const DEFAULT_MOBILE_NODE_NAMES: MobileNodeNames = {
   checkpoint: 'MOBILE_CHECKPOINT',
+  textEncoder: 'MOBILE_TEXT_ENCODER',
+  vaeLoader: 'MOBILE_VAE_LOADER',
   loraSlots: ['MOBILE_LORA_1', 'MOBILE_LORA_2', 'MOBILE_LORA_3'],
   positive: 'MOBILE_POSITIVE',
   negative: 'MOBILE_NEGATIVE',
@@ -117,6 +123,8 @@ export function getMobileGenerationProfile(workflow: Workflow): MobileGeneration
   const rawLoraSlots = Array.isArray(rawNames.loraSlots) ? rawNames.loraSlots : [];
   const nodeNames: MobileNodeNames = {
     checkpoint: stringOr(rawNames.checkpoint, DEFAULT_MOBILE_NODE_NAMES.checkpoint),
+    textEncoder: stringOr(rawNames.textEncoder, DEFAULT_MOBILE_NODE_NAMES.textEncoder),
+    vaeLoader: stringOr(rawNames.vaeLoader, DEFAULT_MOBILE_NODE_NAMES.vaeLoader),
     loraSlots: [
       stringOr(rawLoraSlots[0], DEFAULT_MOBILE_NODE_NAMES.loraSlots[0]),
       stringOr(rawLoraSlots[1], DEFAULT_MOBILE_NODE_NAMES.loraSlots[1]),

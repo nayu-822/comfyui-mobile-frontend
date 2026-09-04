@@ -104,6 +104,18 @@ const canonicalNodeTypes = Object.fromEntries(
     category: '',
   }]),
 ) as unknown as NodeTypes;
+const animaNodeTypes = Object.fromEntries(
+  [...new Set(animaWorkflow.nodes.map((node) => node.type))].map((type) => [type, {
+    input: { required: {}, optional: {} },
+    output: [],
+    output_name: [],
+    name: type,
+    display_name: type,
+    description: '',
+    python_module: '',
+    category: '',
+  }]),
+) as unknown as NodeTypes;
 
 function seedFromRequest(request: unknown): unknown {
   const workflow = (request as {
@@ -240,7 +252,7 @@ describe('useSimpleGeneration shared submit state', () => {
     });
     useSimpleGenerationStore.getState().setContextForMode('anima', {
       baseWorkflow: animaWorkflow,
-      nodeTypes: canonicalNodeTypes,
+      nodeTypes: animaNodeTypes,
       checkpoints: ['models/anima.safetensors'],
       checkpointsStatus: 'loaded',
     });
@@ -249,6 +261,7 @@ describe('useSimpleGeneration shared submit state', () => {
     await expect(useSimpleGenerationStore.getState().generate()).resolves.toBe(true);
 
     const request = apiMocks.queuePrompt.mock.calls[0]?.[0] as {
+      prompt?: Record<string, unknown>;
       extra_data?: { extra_pnginfo?: { workflow?: Workflow } };
     };
     expect(request.extra_data?.extra_pnginfo?.workflow?.extra)
@@ -258,6 +271,17 @@ describe('useSimpleGeneration shared submit state', () => {
     )?.widgets_values;
     expect(Array.isArray(animaCheckpointWidgets) ? animaCheckpointWidgets[0] : undefined)
       .toBe('models/anima.safetensors');
+    const animaModelNode = request.extra_data?.extra_pnginfo?.workflow?.nodes.find(
+      (node) => node.title === 'MOBILE_CHECKPOINT',
+    );
+    expect(animaModelNode?.type).toBe('UNETLoader');
+    expect(request.extra_data?.extra_pnginfo?.workflow?.nodes.find(
+      (node) => node.title === 'MOBILE_TEXT_ENCODER',
+    )?.type).toBe('CLIPLoader');
+    expect(request.extra_data?.extra_pnginfo?.workflow?.nodes.find(
+      (node) => node.title === 'MOBILE_VAE_LOADER',
+    )?.type).toBe('VAELoader');
+    expect(request.prompt?.['1']).toMatchObject({ class_type: 'UNETLoader' });
     expect(useGenerationForm.getState().positivePrompt).not.toBe('anima prompt');
   });
 

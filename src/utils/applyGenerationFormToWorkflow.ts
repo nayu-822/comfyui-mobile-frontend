@@ -81,17 +81,25 @@ function setMode(workflow: Workflow, name: string, mode: 0 | 4): Workflow {
   return updateNamedNode(workflow, name, (node) => ({ ...node, mode }));
 }
 
-/** Apply the form to a cloned mobile workflow and select one executable result path. */
-export function applyGenerationFormToWorkflow(
+interface MobileWorkflowApplyOptions {
+  /** Widget name used by the model loader for the form's Checkpoint field. */
+  modelWidgetName: 'ckpt_name' | 'unet_name';
+  /** Output prefix suffix used to keep SDXL and Anima outputs distinguishable. */
+  outputPrefix: 'mobile_sdxl' | 'mobile_anima';
+}
+
+/** Apply the shared form mapping to a cloned mobile workflow. */
+function applyGenerationFormToWorkflowInternal(
   form: GenerationFormState,
   sourceWorkflow: Workflow,
+  options: MobileWorkflowApplyOptions,
   resolvedSeed: number = form.seed,
 ): Workflow {
   let workflow = cloneWorkflow(sourceWorkflow);
   const { nodeNames } = getMobileGenerationProfile(workflow);
 
   workflow = updateNamedNode(workflow, nodeNames.checkpoint, (node) =>
-    setGenerationWidgetValue(node, 0, form.checkpoint, 'ckpt_name'));
+    setGenerationWidgetValue(node, 0, form.checkpoint, options.modelWidgetName));
   workflow = updateNamedNode(workflow, nodeNames.positive, (node) =>
     setGenerationWidgetValue(node, 0, form.positivePrompt, 'text'));
   workflow = updateNamedNode(workflow, nodeNames.negative, (node) =>
@@ -228,12 +236,24 @@ export function applyGenerationFormToWorkflow(
       node,
       0,
       form.upscaleEnabled
-        ? '%date:yyyyMMdd%_upscale/mobile_sdxl'
-        : '%date:yyyyMMdd%_normal/mobile_sdxl',
+        ? `%date:yyyyMMdd%_upscale/${options.outputPrefix}`
+        : `%date:yyyyMMdd%_normal/${options.outputPrefix}`,
       'filename_prefix',
     ));
 
   return workflow;
+}
+
+/** Apply the form to a cloned SDXL mobile workflow. */
+export function applyGenerationFormToWorkflow(
+  form: GenerationFormState,
+  sourceWorkflow: Workflow,
+  resolvedSeed: number = form.seed,
+): Workflow {
+  return applyGenerationFormToWorkflowInternal(form, sourceWorkflow, {
+    modelWidgetName: 'ckpt_name',
+    outputPrefix: 'mobile_sdxl',
+  }, resolvedSeed);
 }
 
 /** Apply the shared form to the SDXL canonical workflow. */
@@ -245,15 +265,60 @@ export function applyGenerationFormToSdxlWorkflow(
   return applyGenerationFormToWorkflow(form, sourceWorkflow, resolvedSeed);
 }
 
-/** Apply the shared form to the Anima canonical workflow. Its node profile is
- * intentionally compatible with the SDXL path, so the graph mutation logic
- * remains shared while the canonical asset stays mode-specific. */
+/**
+ * Apply the form to the native Anima workflow.
+ *
+ * Anima is a split-file model: the model, Qwen text encoder, and Qwen Image VAE
+ * are separate loader nodes. The feature branches (LoRA, Hires, FaceDetailer,
+ * and upscaler) can share the normal ComfyUI sockets, but their loader boundary
+ * must be mapped explicitly instead of treating Anima as a CheckpointLoader
+ * alias.
+ */
 export function applyGenerationFormToAnimaWorkflow(
   form: GenerationFormState,
   sourceWorkflow: Workflow,
   resolvedSeed: number = form.seed,
 ): Workflow {
-  return applyGenerationFormToWorkflow(form, sourceWorkflow, resolvedSeed);
+  const workflow = applyGenerationFormToWorkflowInternal(form, sourceWorkflow, {
+    modelWidgetName: 'unet_name',
+    outputPrefix: 'mobile_anima',
+  }, resolvedSeed);
+  return applyAnimaNativeNodeMapping(workflow, form);
+}
+
+function applyAnimaNativeNodeMapping(workflow: Workflow, form: GenerationFormState): Workflow {
+  const { nodeNames } = getMobileGenerationProfile(workflow);
+  let next = updateNamedNode(workflow, nodeNames.checkpoint, (node) =>
+    setGenerationWidgetValue(node, 0, form.checkpoint, 'unet_name'));
+
+  // The first LoRA is the adapter boundary between the native Anima loaders
+  // and the shared feature graph. Reassert these edges so a restored or edited
+  // workflow cannot accidentally send a checkpoint CLIP/VAE into Anima.
+  next = replaceNamedWorkflowInputLink(
+    next,
+    nodeNames.loraSlots[0],
+    'model',
+    nodeNames.checkpoint,
+    'MODEL',
+  );
+  next = replaceNamedWorkflowInputLink(
+    next,
+    nodeNames.loraSlots[0],
+    'clip',
+    nodeNames.textEncoder,
+    'CLIP',
+  );
+
+  for (const targetName of [
+    nodeNames.vaeDecode,
+    nodeNames.hiresResizeDecode,
+    nodeNames.hiresResizeEncode,
+    nodeNames.faceDetailer,
+  ]) {
+    next = replaceNamedWorkflowInputLink(next, targetName, 'vae', nodeNames.vaeLoader, 'VAE');
+  }
+
+  return next;
 }
 
 function replaceNamedWorkflowInputLink(

@@ -1,22 +1,39 @@
 {
-  "last_node_id": 22,
+  "last_node_id": 24,
   "last_link_id": 46,
   "nodes": [
     {
       "id": 1,
-      "type": "CheckpointLoaderSimple",
+      "type": "UNETLoader",
       "pos": [
-        0,
-        200
+        -50,
+        170
       ],
       "size": [
-        320,
-        100
+        310,
+        130
       ],
       "flags": {},
-      "order": 0,
+      "order": 6,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "name": "unet_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "unet_name"
+          },
+          "link": null
+        },
+        {
+          "name": "weight_dtype",
+          "type": "COMBO",
+          "widget": {
+            "name": "weight_dtype"
+          },
+          "link": null
+        }
+      ],
       "outputs": [
         {
           "name": "MODEL",
@@ -25,33 +42,31 @@
             1
           ],
           "slot_index": 0
-        },
-        {
-          "name": "CLIP",
-          "type": "CLIP",
-          "links": [
-            2
-          ],
-          "slot_index": 1
-        },
-        {
-          "name": "VAE",
-          "type": "VAE",
-          "links": [
-            19,
-            23,
-            31,
-            34
-          ],
-          "slot_index": 2
         }
       ],
       "title": "MOBILE_CHECKPOINT",
       "properties": {
-        "Node name for S&R": "MOBILE_CHECKPOINT"
+        "Node name for S&R": "UNETLoader",
+        "cnr_id": "comfy-core",
+        "ver": "0.11.0",
+        "models": [
+          {
+            "name": "anima-base-v1.0.safetensors",
+            "url": "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/diffusion_models/anima-base-v1.0.safetensors",
+            "directory": "diffusion_models"
+          }
+        ],
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65
       },
       "widgets_values": [
-        "PUT_ANIMA_CHECKPOINT_HERE.safetensors"
+        "anima-base-v1.0.safetensors",
+        "default"
       ]
     },
     {
@@ -106,8 +121,8 @@
       },
       "widgets_values": [
         "PUT_LORA_1_HERE.safetensors",
-        1.0,
-        1.0
+        1,
+        1
       ]
     },
     {
@@ -162,8 +177,8 @@
       },
       "widgets_values": [
         "PUT_LORA_2_HERE.safetensors",
-        1.0,
-        1.0
+        1,
+        1
       ]
     },
     {
@@ -225,8 +240,8 @@
       },
       "widgets_values": [
         "PUT_LORA_3_HERE.safetensors",
-        1.0,
-        1.0
+        1,
+        1
       ]
     },
     {
@@ -268,7 +283,7 @@
         "Node name for S&R": "MOBILE_POSITIVE"
       },
       "widgets_values": [
-        "masterpiece, best quality, 1girl"
+        "masterpiece, best quality, score_7, safe, 1girl"
       ]
     },
     {
@@ -310,7 +325,7 @@
         "Node name for S&R": "MOBILE_NEGATIVE"
       },
       "widgets_values": [
-        "lowres, worst quality, bad anatomy"
+        "worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, chromatic aberration"
       ]
     },
     {
@@ -407,11 +422,11 @@
       "widgets_values": [
         123456789,
         "fixed",
-        28,
-        5.0,
-        "euler_ancestral",
-        "normal",
-        1.0
+        30,
+        4,
+        "er_sde",
+        "simple",
+        1
       ]
     },
     {
@@ -511,7 +526,7 @@
         123456789,
         "fixed",
         15,
-        5.0,
+        5,
         "euler_ancestral",
         "normal",
         0.35
@@ -702,7 +717,7 @@
         123456789,
         "fixed",
         15,
-        5.0,
+        5,
         "euler_ancestral",
         "normal",
         0.35
@@ -936,7 +951,7 @@
         123456789,
         "fixed",
         15,
-        5.0,
+        5,
         "euler_ancestral",
         "normal",
         0.35,
@@ -945,7 +960,7 @@
         true,
         0.5,
         10,
-        3.0,
+        3,
         "center-1",
         0,
         0.93,
@@ -1068,7 +1083,7 @@
         "Node name for S&R": "MOBILE_SAVE_IMAGE"
       },
       "widgets_values": [
-        "%date:yyyyMMdd%_normal/mobile_sdxl"
+        "%date:yyyyMMdd%_normal/mobile_anima"
       ]
     },
     {
@@ -1150,6 +1165,143 @@
       "widgets_values": [
         ""
       ]
+    },
+    {
+      "id": 23,
+      "type": "CLIPLoader",
+      "pos": [
+        -50,
+        380
+      ],
+      "size": [
+        310,
+        150
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "clip_name"
+          },
+          "link": null
+        },
+        {
+          "name": "type",
+          "type": "COMBO",
+          "widget": {
+            "name": "type"
+          },
+          "link": null
+        },
+        {
+          "name": "device",
+          "type": "COMBO",
+          "widget": {
+            "name": "device"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            2
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader",
+        "cnr_id": "comfy-core",
+        "ver": "0.11.0",
+        "models": [
+          {
+            "name": "qwen_3_06b_base.safetensors",
+            "url": "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/text_encoders/qwen_3_06b_base.safetensors",
+            "directory": "text_encoders"
+          }
+        ],
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65
+      },
+      "widgets_values": [
+        "qwen_3_06b_base.safetensors",
+        "stable_diffusion",
+        "default"
+      ],
+      "title": "MOBILE_TEXT_ENCODER"
+    },
+    {
+      "id": 24,
+      "type": "VAELoader",
+      "pos": [
+        -50,
+        610
+      ],
+      "size": [
+        310,
+        100
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "vae_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "vae_name"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            19,
+            23,
+            31,
+            34
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader",
+        "cnr_id": "comfy-core",
+        "ver": "0.3.40",
+        "models": [
+          {
+            "name": "qwen_image_vae.safetensors",
+            "url": "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/vae/qwen_image_vae.safetensors",
+            "directory": "vae"
+          }
+        ],
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65
+      },
+      "widgets_values": [
+        "qwen_image_vae.safetensors"
+      ],
+      "title": "MOBILE_VAE_LOADER"
     }
   ],
   "links": [
@@ -1163,8 +1315,8 @@
     ],
     [
       2,
-      1,
-      1,
+      23,
+      0,
       2,
       1,
       "CLIP"
@@ -1291,8 +1443,8 @@
     ],
     [
       19,
-      1,
-      2,
+      24,
+      0,
       11,
       1,
       "VAE"
@@ -1323,8 +1475,8 @@
     ],
     [
       23,
-      1,
-      2,
+      24,
+      0,
       13,
       3,
       "VAE"
@@ -1371,8 +1523,8 @@
     ],
     [
       31,
-      1,
-      2,
+      24,
+      0,
       17,
       1,
       "VAE"
@@ -1395,8 +1547,8 @@
     ],
     [
       34,
-      1,
-      2,
+      24,
+      0,
       19,
       1,
       "VAE"
@@ -1504,7 +1656,9 @@
         "faceDetailer": "MOBILE_FACE_DETAILER",
         "upscaleModel": "MOBILE_UPSCALE_MODEL",
         "upscale": "MOBILE_UPSCALE",
-        "saveImage": "MOBILE_SAVE_IMAGE"
+        "saveImage": "MOBILE_SAVE_IMAGE",
+        "textEncoder": "MOBILE_TEXT_ENCODER",
+        "vaeLoader": "MOBILE_VAE_LOADER"
       },
       "features": {
         "lora1": {
@@ -1551,6 +1705,14 @@
           ],
           "defaultEnabled": false
         }
+      },
+      "animaArchitecture": {
+        "modelLoader": "UNETLoader",
+        "modelWidget": "unet_name",
+        "textEncoder": "CLIPLoader",
+        "textEncoderWidget": "clip_name",
+        "vaeLoader": "VAELoader",
+        "vaeWidget": "vae_name"
       }
     }
   },

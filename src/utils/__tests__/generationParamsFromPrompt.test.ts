@@ -136,6 +136,40 @@ describe('generationParamsFromPrompt', () => {
     expect(patch).not.toHaveProperty('faceNegativePrompt');
   });
 
+  it('restores the Anima model from its native UNETLoader prompt input', () => {
+    const patch = generationParamsFromPrompt({
+      model: node('UNETLoader', { unet_name: 'anima-base-v1.0.safetensors' }, 'MOBILE_CHECKPOINT'),
+      textEncoder: node('CLIPLoader', {
+        clip_name: 'qwen_3_06b_base.safetensors',
+        type: 'stable_diffusion',
+        device: 'default',
+      }, 'MOBILE_TEXT_ENCODER'),
+      vae: node('VAELoader', { vae_name: 'qwen_image_vae.safetensors' }, 'MOBILE_VAE_LOADER'),
+      positive: node('CLIPTextEncode', { text: 'anima positive' }, 'MOBILE_POSITIVE'),
+      negative: node('CLIPTextEncode', { text: 'anima negative' }, 'MOBILE_NEGATIVE'),
+      size: node('EmptyLatentImage', { width: 896, height: 1152, batch_size: 1 }, 'MOBILE_SIZE'),
+      sampler: node('KSampler', {
+        seed: 42,
+        steps: 30,
+        cfg: 4,
+        sampler_name: 'er_sde',
+        scheduler: 'simple',
+      }, 'MOBILE_BASE_SAMPLER'),
+    });
+
+    expect(patch).toMatchObject({
+      checkpoint: 'anima-base-v1.0.safetensors',
+      positivePrompt: 'anima positive',
+      negativePrompt: 'anima negative',
+      width: 896,
+      height: 1152,
+      steps: 30,
+      cfg: 4,
+      sampler: 'er_sde',
+      scheduler: 'simple',
+    });
+  });
+
   it('recognizes the active resize Hires branch without a latent scale node', () => {
     const patch = generationParamsFromPrompt({
       '1': node('EmptyLatentImage', { width: 512, height: 512 }),

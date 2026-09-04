@@ -74,7 +74,11 @@ export function generationParamsFromWorkflow(workflow: Workflow): GenerationForm
   const { nodeNames } = getMobileGenerationProfile(workflow);
   const patch: GenerationFormPatch = {};
 
-  const checkpoint = findNamedOrType(workflow, nodeNames.checkpoint, ['CheckpointLoaderSimple', 'CheckpointLoader']);
+  const checkpoint = findNamedOrType(
+    workflow,
+    nodeNames.checkpoint,
+    ['CheckpointLoaderSimple', 'CheckpointLoader', 'UNETLoader'],
+  );
   const positive = findNamedOrType(workflow, nodeNames.positive, ['CLIPTextEncode']);
   const negative = findNamedOrType(
     workflow,
@@ -85,7 +89,11 @@ export function generationParamsFromWorkflow(workflow: Workflow): GenerationForm
   const size = findNamedOrType(workflow, nodeNames.size, ['EmptyLatentImage']);
   const baseSampler = findNamedOrType(workflow, nodeNames.baseSampler, ['KSampler', 'KSamplerAdvanced']);
 
-  const checkpointValue = stringValue(getGenerationWidgetValue(checkpoint, 0, 'ckpt_name'));
+  const checkpointValue = stringValue(getGenerationWidgetValue(
+    checkpoint,
+    0,
+    checkpoint?.type === 'UNETLoader' ? 'unet_name' : 'ckpt_name',
+  ));
   if (checkpointValue !== undefined) patch.checkpoint = checkpointValue;
   const positiveValue = stringValue(getGenerationWidgetValue(positive, 0, 'text'));
   if (positiveValue !== undefined) patch.positivePrompt = positiveValue;
