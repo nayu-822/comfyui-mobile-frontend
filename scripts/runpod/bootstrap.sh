@@ -18,6 +18,8 @@ RCLONE_REMOTE_NAME="${RCLONE_REMOTE_NAME:-gdrive}"
 RCLONE_CONFIG="${RCLONE_CONFIG:-${RCLONE_CONFIG_PATH:-/tmp/rclone.conf}}"
 
 GDRIVE_MODEL_PATH="${GDRIVE_MODEL_PATH:-sdxl_model}"
+GDRIVE_TEXT_ENCODER_PATH="${GDRIVE_TEXT_ENCODER_PATH:-anima_text_encoder}"
+GDRIVE_VAE_PATH="${GDRIVE_VAE_PATH:-anima_vae}"
 GDRIVE_LORA_PATH="${GDRIVE_LORA_PATH:-sdxl_lora}"
 GDRIVE_UPSCALER_PATH="${GDRIVE_UPSCALER_PATH:-sdxl_upscaler}"
 GDRIVE_DETAILER_PATH="${GDRIVE_DETAILER_PATH:-sdxl_detailer}"
@@ -50,9 +52,16 @@ IMPACT_PACK_REF="${IMPACT_PACK_REF:-Main}"
 IMPACT_SUBPACK_REF="${IMPACT_SUBPACK_REF:-main}"
 
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-${COMFYUI_DIR}/models/checkpoints}"
+DIFFUSION_MODEL_DIR="${DIFFUSION_MODEL_DIR:-${COMFYUI_DIR}/models/diffusion_models}"
+TEXT_ENCODER_DIR="${TEXT_ENCODER_DIR:-${COMFYUI_DIR}/models/text_encoders}"
+VAE_DIR="${VAE_DIR:-${COMFYUI_DIR}/models/vae}"
 LORA_DIR="${LORA_DIR:-${COMFYUI_DIR}/models/loras}"
 UPSCALE_MODEL_DIR="${UPSCALE_MODEL_DIR:-${COMFYUI_DIR}/models/upscale_models}"
 DETAILER_DIR="${DETAILER_DIR:-${COMFYUI_DIR}/models/ultralytics/bbox}"
+
+ANIMA_MODEL_FILENAME="anima-base-v1.0.safetensors"
+ANIMA_TEXT_ENCODER_FILENAME="qwen_3_06b_base.safetensors"
+ANIMA_VAE_FILENAME="qwen_image_vae.safetensors"
 
 # Set by resolve_comfyui_python after the baked ComfyUI directory is available.
 COMFYUI_PYTHON=""
@@ -100,6 +109,7 @@ validate_runpod_storage_layout() {
   local configured_runpod_slim_dir="$RUNPOD_SLIM_DIR"
   local configured_comfyui_dir="$COMFYUI_DIR"
   local configured_checkpoint_dir="$NETWORK_CHECKPOINT_DIR"
+  local configured_model_dir
   local configured_local_root="$LOCAL_EPHEMERAL_ROOT"
   [[ ! -L "$configured_workspace_dir" ]] || {
     log "$configured_workspace_dir must be a real Network Volume mount path"
@@ -117,6 +127,16 @@ validate_runpod_storage_layout() {
     log "NETWORK_CHECKPOINT_DIR must not be a symlink: $configured_checkpoint_dir"
     exit 1
   }
+  for configured_model_dir in \
+    "$CHECKPOINT_DIR" \
+    "$DIFFUSION_MODEL_DIR" \
+    "$TEXT_ENCODER_DIR" \
+    "$VAE_DIR"; do
+    [[ ! -L "$configured_model_dir" ]] || {
+      log "ComfyUI model directory must not be a symlink: $configured_model_dir"
+      exit 1
+    }
+  done
   [[ ! -L "$configured_local_root" ]] || {
     log "LOCAL_EPHEMERAL_ROOT must be a real Container Disk directory: $configured_local_root"
     exit 1
@@ -126,6 +146,10 @@ validate_runpod_storage_layout() {
   RUNPOD_SLIM_DIR="$(resolve_path "$RUNPOD_SLIM_DIR")"
   COMFYUI_DIR="$(resolve_path "$COMFYUI_DIR")"
   NETWORK_CHECKPOINT_DIR="$(resolve_path "$NETWORK_CHECKPOINT_DIR")"
+  CHECKPOINT_DIR="$(resolve_path "$CHECKPOINT_DIR")"
+  DIFFUSION_MODEL_DIR="$(resolve_path "$DIFFUSION_MODEL_DIR")"
+  TEXT_ENCODER_DIR="$(resolve_path "$TEXT_ENCODER_DIR")"
+  VAE_DIR="$(resolve_path "$VAE_DIR")"
   LOCAL_EPHEMERAL_ROOT="$(resolve_path "$LOCAL_EPHEMERAL_ROOT")"
   LOCAL_OUTPUT_DIR="$(resolve_path "$LOCAL_OUTPUT_DIR")"
   LOCAL_TEMP_DIR="$(resolve_path "$LOCAL_TEMP_DIR")"
@@ -156,6 +180,22 @@ validate_runpod_storage_layout() {
     exit 1
   }
 
+  local comfyui_models_root="${COMFYUI_DIR}/models"
+  for configured_model_dir in \
+    "$CHECKPOINT_DIR" \
+    "$DIFFUSION_MODEL_DIR" \
+    "$TEXT_ENCODER_DIR" \
+    "$VAE_DIR"; do
+    path_is_within "$configured_model_dir" "$comfyui_models_root" || {
+      log "ComfyUI model directory must stay under $comfyui_models_root: $configured_model_dir"
+      exit 1
+    }
+    [[ ! -L "$configured_model_dir" ]] || {
+      log "ComfyUI model directory must not be a symlink: $configured_model_dir"
+      exit 1
+    }
+  done
+
   [[ ! -L "$LOCAL_EPHEMERAL_ROOT" ]] || {
     log "LOCAL_EPHEMERAL_ROOT must be a real Container Disk directory: $LOCAL_EPHEMERAL_ROOT"
     exit 1
@@ -181,6 +221,10 @@ validate_runpod_storage_layout() {
 log_storage_layout() {
   log "Network Volume checkpoints: $NETWORK_CHECKPOINT_DIR"
   log "ComfyUI: $COMFYUI_DIR"
+  log "ComfyUI checkpoint links: $CHECKPOINT_DIR"
+  log "ComfyUI diffusion model links: $DIFFUSION_MODEL_DIR"
+  log "ComfyUI text encoders: $TEXT_ENCODER_DIR"
+  log "ComfyUI VAEs: $VAE_DIR"
   log "Local output: $LOCAL_OUTPUT_DIR"
   log "Local temp: $LOCAL_TEMP_DIR"
   log "Google Drive output: ${RCLONE_REMOTE_NAME}:${GDRIVE_OUTPUT_PATH}"
@@ -553,51 +597,79 @@ copy_checkpoint_to_cache() {
   mv -f "$temp_path" "$cache_path"
 }
 
-prepare_checkpoint_link_dir() {
-  [[ ! -L "$CHECKPOINT_DIR" ]] || {
-    log "CHECKPOINT_DIR must be a directory, not a symlink: $CHECKPOINT_DIR"
+is_managed_checkpoint_link() {
+  local link_path="$1"
+  [[ ! -e "$link_path" ]] && return 0
+  local target_path
+  target_path="$(readlink -- "$link_path" 2>/dev/null || true)"
+  [[ -n "$target_path" ]] || return 1
+  if [[ "$target_path" != /* ]]; then
+    target_path="$(dirname -- "$link_path")/$target_path"
+  fi
+  path_is_within "$target_path" "$NETWORK_CHECKPOINT_DIR"
+}
+
+prepare_model_link_dir() {
+  local model_dir="$1"
+  local label="$2"
+  [[ ! -L "$model_dir" ]] || {
+    log "$label directory must be a directory, not a symlink: $model_dir"
     exit 1
   }
-  mkdir -p "$CHECKPOINT_DIR"
-
-  local legacy_file
-  legacy_file="$(find "$CHECKPOINT_DIR" -type f -print -quit)"
-  if [[ -n "$legacy_file" ]]; then
-    local backup_dir
-    backup_dir="$(unique_backup_path "$CHECKPOINT_DIR")"
-    mv "$CHECKPOINT_DIR" "$backup_dir"
-    mkdir -p "$CHECKPOINT_DIR"
-    log "moved unmanaged local checkpoint directory aside to $backup_dir"
-  fi
+  mkdir -p "$model_dir"
 
   local stale_link
   while IFS= read -r -d '' stale_link; do
-    log "removing stale checkpoint link $stale_link"
-    rm -f "$stale_link"
-  done < <(find "$CHECKPOINT_DIR" -type l -print0)
-  find "$CHECKPOINT_DIR" -depth -mindepth 1 -type d -empty -delete
+    if is_managed_checkpoint_link "$stale_link"; then
+      log "removing stale $label link $stale_link"
+      rm -f -- "$stale_link"
+    fi
+  done < <(find "$model_dir" -type l -print0)
+  find "$model_dir" -depth -mindepth 1 -type d -empty -delete
+}
+
+prepare_checkpoint_link_dir() {
+  prepare_model_link_dir "$CHECKPOINT_DIR" "checkpoint"
+  prepare_model_link_dir "$DIFFUSION_MODEL_DIR" "diffusion model"
+}
+
+link_cached_model() {
+  local relative_path="$1"
+  local model_dir="$2"
+  local label="$3"
+  local cache_path="${NETWORK_CHECKPOINT_DIR}/${relative_path}"
+  local link_path="${model_dir}/${relative_path}"
+  mkdir -p "$(dirname "$link_path")"
+
+  [[ -f "$cache_path" && ! -L "$cache_path" ]] || {
+    log "checkpoint cache file is missing or is not regular: $cache_path"
+    exit 1
+  }
+
+  if [[ -L "$link_path" ]]; then
+    local current_target cache_target
+    current_target="$(readlink -f "$link_path" 2>/dev/null || true)"
+    cache_target="$(resolve_path "$cache_path")"
+    if [[ "$current_target" == "$cache_target" ]]; then return 0; fi
+    rm -f -- "$link_path"
+    log "replacing incorrect $label link $link_path"
+  elif [[ -d "$link_path" ]]; then
+    log "$label link path is a directory: $link_path"
+    exit 1
+  elif [[ -e "$link_path" ]]; then
+    local backup_path
+    backup_path="$(unique_backup_path "$link_path")"
+    mv -- "$link_path" "$backup_path"
+    log "moved existing $label model aside to $backup_path"
+  fi
+  ln -s "$cache_path" "$link_path"
+  log "linked $link_path -> $cache_path"
 }
 
 link_checkpoint() {
   local relative_path="$1"
-  local cache_path="${NETWORK_CHECKPOINT_DIR}/${relative_path}"
-  local link_path="${CHECKPOINT_DIR}/${relative_path}"
-  mkdir -p "$(dirname "$link_path")"
-
-  if [[ -d "$link_path" && ! -L "$link_path" ]]; then
-    log "checkpoint link path is a directory: $link_path"
-    exit 1
-  fi
-  if [[ -L "$link_path" ]]; then
-    local current_target
-    current_target="$(readlink -f "$link_path" 2>/dev/null || true)"
-    if [[ "$current_target" == "$cache_path" ]]; then return 0; fi
-    rm -f "$link_path"
-  elif [[ -e "$link_path" ]]; then
-    log "unmanaged local checkpoint path remains: $link_path"
-    exit 1
-  fi
-  ln -s "$cache_path" "$link_path"
+  link_cached_model "$relative_path" "$CHECKPOINT_DIR" "checkpoint"
+  link_cached_model "$relative_path" "$DIFFUSION_MODEL_DIR" "diffusion model"
 }
 
 sync_gdrive_checkpoints() {
@@ -630,12 +702,42 @@ sync_gdrive_checkpoints() {
 }
 
 copy_gdrive_local_models() {
+  if ! copy_gdrive_extensions "$GDRIVE_TEXT_ENCODER_PATH" "$TEXT_ENCODER_DIR" \
+    '*.safetensors' '*.pt' '*.pth'; then
+    log "warning: could not sync Anima text encoder from ${RCLONE_REMOTE_NAME}:${GDRIVE_TEXT_ENCODER_PATH}; continuing"
+  fi
+  if ! copy_gdrive_extensions "$GDRIVE_VAE_PATH" "$VAE_DIR" \
+    '*.safetensors' '*.pt' '*.pth'; then
+    log "warning: could not sync Anima VAE from ${RCLONE_REMOTE_NAME}:${GDRIVE_VAE_PATH}; continuing"
+  fi
   copy_gdrive_extensions "$GDRIVE_LORA_PATH" "$LORA_DIR" \
     '*.safetensors' '*.ckpt' '*.pt'
   copy_gdrive_extensions "$GDRIVE_UPSCALER_PATH" "$UPSCALE_MODEL_DIR" \
     '*.pth' '*.pt' '*.safetensors'
   copy_gdrive_extensions "$GDRIVE_DETAILER_PATH" "$DETAILER_DIR" \
     '*.pt' '*.pth'
+}
+
+verify_anima_model_files() {
+  local anima_model_path="${DIFFUSION_MODEL_DIR}/${ANIMA_MODEL_FILENAME}"
+  local anima_text_encoder_path="${TEXT_ENCODER_DIR}/${ANIMA_TEXT_ENCODER_FILENAME}"
+  local anima_vae_path="${VAE_DIR}/${ANIMA_VAE_FILENAME}"
+
+  if [[ -f "$anima_model_path" ]]; then
+    log "Anima model is available from diffusion_models: $anima_model_path"
+  else
+    log "warning: Anima model is missing from diffusion_models: $anima_model_path"
+  fi
+  if [[ -f "$anima_text_encoder_path" ]]; then
+    log "Anima text encoder is available from text_encoders: $anima_text_encoder_path"
+  else
+    log "warning: Anima text encoder is missing from text_encoders: $anima_text_encoder_path"
+  fi
+  if [[ -f "$anima_vae_path" ]]; then
+    log "Anima VAE is available from vae: $anima_vae_path"
+  else
+    log "warning: Anima VAE is missing from vae: $anima_vae_path"
+  fi
 }
 
 clone_if_missing() {
@@ -981,6 +1083,7 @@ bootstrap_main() {
   ensure_comfyui_manager
   configure_comfyui_manager_args
   mkdir -p "$COMFYUI_DIR/custom_nodes" "$NETWORK_CHECKPOINT_DIR" \
+    "$CHECKPOINT_DIR" "$DIFFUSION_MODEL_DIR" "$TEXT_ENCODER_DIR" "$VAE_DIR" \
     "$LORA_DIR" "$UPSCALE_MODEL_DIR" "$DETAILER_DIR"
   install_mobile_frontend
   register_canonical_workflow
@@ -989,6 +1092,7 @@ bootstrap_main() {
   migrate_storage_directory "$COMFYUI_DIR/output" "$LOCAL_OUTPUT_DIR" output
   migrate_storage_directory "$COMFYUI_DIR/temp" "$LOCAL_TEMP_DIR" temp
   copy_gdrive_local_models
+  verify_anima_model_files
   log_storage_layout
   install_impact_pack
   verify_mobile_frontend_install

@@ -44,6 +44,20 @@ assert_contains "$BOOTSTRAP" 'checkpoint_manifest'
 assert_contains "$BOOTSTRAP" 'rclone copyto "$remote_path" "$temp_path"'
 assert_contains "$BOOTSTRAP" 'mv -f "$temp_path" "$cache_path"'
 assert_contains "$BOOTSTRAP" 'NETWORK_CHECKPOINT_DIR'
+assert_contains "$BOOTSTRAP" 'GDRIVE_TEXT_ENCODER_PATH="${GDRIVE_TEXT_ENCODER_PATH:-anima_text_encoder}"'
+assert_contains "$BOOTSTRAP" 'GDRIVE_VAE_PATH="${GDRIVE_VAE_PATH:-anima_vae}"'
+assert_contains "$BOOTSTRAP" 'DIFFUSION_MODEL_DIR="${DIFFUSION_MODEL_DIR:-${COMFYUI_DIR}/models/diffusion_models}"'
+assert_contains "$BOOTSTRAP" 'TEXT_ENCODER_DIR="${TEXT_ENCODER_DIR:-${COMFYUI_DIR}/models/text_encoders}"'
+assert_contains "$BOOTSTRAP" 'VAE_DIR="${VAE_DIR:-${COMFYUI_DIR}/models/vae}"'
+assert_contains "$BOOTSTRAP" 'prepare_model_link_dir "$DIFFUSION_MODEL_DIR" "diffusion model"'
+assert_contains "$BOOTSTRAP" 'link_cached_model "$relative_path" "$DIFFUSION_MODEL_DIR" "diffusion model"'
+assert_contains "$BOOTSTRAP" 'copy_gdrive_extensions "$GDRIVE_TEXT_ENCODER_PATH" "$TEXT_ENCODER_DIR"'
+assert_contains "$BOOTSTRAP" 'copy_gdrive_extensions "$GDRIVE_VAE_PATH" "$VAE_DIR"'
+assert_contains "$BOOTSTRAP" "'*.safetensors' '*.pt' '*.pth'"
+assert_contains "$BOOTSTRAP" 'verify_anima_model_files()'
+assert_contains "$BOOTSTRAP" 'warning: Anima model is missing from diffusion_models'
+assert_contains "$BOOTSTRAP" 'warning: Anima text encoder is missing from text_encoders'
+assert_contains "$BOOTSTRAP" 'warning: Anima VAE is missing from vae'
 assert_contains "$BOOTSTRAP" 'mountpoint -q "$WORKSPACE_DIR"'
 assert_contains "$BOOTSTRAP" 'LOCAL_EPHEMERAL_ROOT'
 assert_contains "$BOOTSTRAP" 'LOCAL_OUTPUT_DIR'
@@ -121,6 +135,8 @@ assert_not_contains "$SYNC" 'copy "${RCLONE_REMOTE_NAME}:$GDRIVE_OUTPUT_PATH"'
 assert_order "$BOOTSTRAP" 'prepare_comfyui' 'configure_runtime_pip_constraints'
 assert_order "$BOOTSTRAP" 'configure_runtime_pip_constraints' 'ensure_comfyui_runtime_venv'
 assert_order "$BOOTSTRAP" 'configure_runtime_pip_constraints' 'ensure_comfyui_manager'
+assert_order "$BOOTSTRAP" 'sync_gdrive_checkpoints' 'copy_gdrive_local_models'
+assert_order "$BOOTSTRAP" 'copy_gdrive_local_models' 'verify_anima_model_files'
 
 behavior_tmp="$(mktemp -d)"
 trap 'rm -rf -- "$behavior_tmp"' EXIT
@@ -210,5 +226,127 @@ if (MOBILE_CUSTOM_NODE_DIR="$COMFYUI_DIR"; install_mobile_frontend >/dev/null 2>
   echo "mobile frontend safety behavior test failed: unsafe destination was accepted" >&2
   exit 1
 fi
+
+model_behavior_tmp="$behavior_tmp/model-layout"
+NETWORK_CHECKPOINT_DIR="$model_behavior_tmp/workspace/models/checkpoints"
+CHECKPOINT_DIR="$model_behavior_tmp/runpod-slim/ComfyUI/models/checkpoints"
+DIFFUSION_MODEL_DIR="$model_behavior_tmp/runpod-slim/ComfyUI/models/diffusion_models"
+TEXT_ENCODER_DIR="$model_behavior_tmp/runpod-slim/ComfyUI/models/text_encoders"
+VAE_DIR="$model_behavior_tmp/runpod-slim/ComfyUI/models/vae"
+GDRIVE_MODEL_PATH="sdxl_model"
+GDRIVE_TEXT_ENCODER_PATH="anima_text_encoder"
+GDRIVE_VAE_PATH="anima_vae"
+SDXL_MODEL_FILENAME="sdxl-model.safetensors"
+mkdir -p "$NETWORK_CHECKPOINT_DIR" "$CHECKPOINT_DIR" "$DIFFUSION_MODEL_DIR" \
+  "$TEXT_ENCODER_DIR" "$VAE_DIR"
+printf '%s\n' stale > "$NETWORK_CHECKPOINT_DIR/stale.safetensors"
+ln -s "$NETWORK_CHECKPOINT_DIR/stale.safetensors" "$CHECKPOINT_DIR/stale.safetensors"
+ln -s "$NETWORK_CHECKPOINT_DIR/stale.safetensors" "$DIFFUSION_MODEL_DIR/stale.safetensors"
+copyto_count=0
+skip_anima_sync=false
+
+rclone() {
+  local operation="${1:-}"
+  case "$operation" in
+    lsf)
+      printf '7\t%s\n' "$ANIMA_MODEL_FILENAME"
+      printf '6\t%s\n' "$SDXL_MODEL_FILENAME"
+      ;;
+    copyto)
+      copyto_count=$((copyto_count + 1))
+      if [[ "$2" == *"$SDXL_MODEL_FILENAME" ]]; then
+        printf 'sdxl!!' > "$3"
+      else
+        printf 'anima!!' > "$3"
+      fi
+      ;;
+    copy)
+      local argument destination="" remote_path=""
+      for argument in "$@"; do
+        destination="$argument"
+        if [[ "$argument" == "${RCLONE_REMOTE_NAME}:${GDRIVE_TEXT_ENCODER_PATH}" || \
+          "$argument" == "${RCLONE_REMOTE_NAME}:${GDRIVE_VAE_PATH}" ]]; then
+          remote_path="$argument"
+        fi
+      done
+      if [[ "$skip_anima_sync" == true && -n "$remote_path" ]]; then
+        return 1
+      fi
+      mkdir -p "$destination"
+      if [[ "$remote_path" == "${RCLONE_REMOTE_NAME}:${GDRIVE_TEXT_ENCODER_PATH}" ]]; then
+        printf '%s\n' encoder > "$destination/$ANIMA_TEXT_ENCODER_FILENAME"
+      elif [[ "$remote_path" == "${RCLONE_REMOTE_NAME}:${GDRIVE_VAE_PATH}" ]]; then
+        printf '%s\n' vae > "$destination/$ANIMA_VAE_FILENAME"
+      fi
+      ;;
+    *)
+      echo "unexpected rclone operation in model behavior test: $operation" >&2
+      return 1
+      ;;
+  esac
+}
+
+sync_gdrive_checkpoints
+sync_gdrive_checkpoints
+[[ -f "$NETWORK_CHECKPOINT_DIR/$ANIMA_MODEL_FILENAME" ]] || {
+  echo "model behavior test failed: checkpoint cache file was not downloaded" >&2
+  exit 1
+}
+[[ -L "$CHECKPOINT_DIR/$ANIMA_MODEL_FILENAME" && \
+  -L "$DIFFUSION_MODEL_DIR/$ANIMA_MODEL_FILENAME" ]] || {
+  echo "model behavior test failed: both ComfyUI model links were not created" >&2
+  exit 1
+}
+[[ "$(readlink -f "$CHECKPOINT_DIR/$ANIMA_MODEL_FILENAME")" == \
+  "$(readlink -f "$NETWORK_CHECKPOINT_DIR/$ANIMA_MODEL_FILENAME")" ]] || {
+  echo "model behavior test failed: checkpoint link does not target the shared cache" >&2
+  exit 1
+}
+[[ "$(readlink -f "$DIFFUSION_MODEL_DIR/$ANIMA_MODEL_FILENAME")" == \
+  "$(readlink -f "$NETWORK_CHECKPOINT_DIR/$ANIMA_MODEL_FILENAME")" ]] || {
+  echo "model behavior test failed: diffusion model link does not target the shared cache" >&2
+  exit 1
+}
+[[ -L "$CHECKPOINT_DIR/$SDXL_MODEL_FILENAME" && \
+  -L "$DIFFUSION_MODEL_DIR/$SDXL_MODEL_FILENAME" ]] || {
+  echo "model behavior test failed: existing SDXL checkpoint links were not created" >&2
+  exit 1
+}
+[[ ! -e "$CHECKPOINT_DIR/stale.safetensors" && \
+  ! -e "$DIFFUSION_MODEL_DIR/stale.safetensors" ]] || {
+  echo "model behavior test failed: stale model links were not removed" >&2
+  exit 1
+}
+cache_file_count="$(find "$NETWORK_CHECKPOINT_DIR" -type f -name "$ANIMA_MODEL_FILENAME" | wc -l | tr -d '[:space:]')"
+[[ "$cache_file_count" == "1" ]] || {
+  echo "model behavior test failed: checkpoint model was copied more than once" >&2
+  exit 1
+}
+[[ "$copyto_count" == "2" ]] || {
+  echo "model behavior test failed: cache reuse downloaded the checkpoint more than once" >&2
+  exit 1
+}
+
+copy_gdrive_local_models
+[[ -f "$TEXT_ENCODER_DIR/$ANIMA_TEXT_ENCODER_FILENAME" ]] || {
+  echo "model behavior test failed: text encoder was not synced" >&2
+  exit 1
+}
+[[ -f "$VAE_DIR/$ANIMA_VAE_FILENAME" ]] || {
+  echo "model behavior test failed: VAE was not synced" >&2
+  exit 1
+}
+rm -f -- "$TEXT_ENCODER_DIR/$ANIMA_TEXT_ENCODER_FILENAME" "$VAE_DIR/$ANIMA_VAE_FILENAME"
+skip_anima_sync=true
+copy_gdrive_local_models
+anima_verification_log="$(verify_anima_model_files 2>&1)"
+grep -Fq 'warning: Anima text encoder is missing from text_encoders' <<<"$anima_verification_log" || {
+  echo "model behavior test failed: missing Anima dependency did not produce a warning" >&2
+  exit 1
+}
+grep -Fq 'warning: Anima VAE is missing from vae' <<<"$anima_verification_log" || {
+  echo "model behavior test failed: missing Anima VAE did not produce a warning" >&2
+  exit 1
+}
 
 echo "RunPod bootstrap static checks passed."

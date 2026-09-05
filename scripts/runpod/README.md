@@ -16,12 +16,14 @@ under `/runpod-local`.
 Network Volume: /workspace
 ├── models/
 │   └── checkpoints/
-│       └── *.safetensors / *.ckpt
+│       └── <relative model path>          # one persistent copy per model
 └── runpod-slim/
     └── ComfyUI/
         ├── custom_nodes/
         ├── user/
         ├── models/
+        │   ├── checkpoints/<relative path>      -> /workspace/models/checkpoints/<relative path>
+        │   └── diffusion_models/<relative path> -> /workspace/models/checkpoints/<relative path>
         ├── output -> /runpod-local/output
         └── temp   -> /runpod-local/temp
 
@@ -84,6 +86,34 @@ The only directory removed by this Template snippet is the fresh source clone
 at `/workspace/comfyui-mobile-frontend-src`; it does not remove
 `/workspace/runpod-slim`.
 
+## Google Drive model layout
+
+The Checkpoint field is shared by the SDXL and Anima screens. There is no
+required SDXL/Anima classification in Google Drive: all files under
+`gdrive:sdxl_model` are downloaded once into the Network Volume cache and are
+then exposed through both ComfyUI `models/checkpoints` and
+`models/diffusion_models` as symlinks.
+
+~~~text
+sdxl_model/
+├── anima-base-v1.0.safetensors
+└── SDXL model files...
+
+anima_text_encoder/
+└── qwen_3_06b_base.safetensors
+
+anima_vae/
+└── qwen_image_vae.safetensors
+
+sdxl_lora/
+sdxl_upscaler/
+sdxl_detailer/
+~~~
+
+The Anima text encoder and VAE are copied to their native ComfyUI directories
+from the two dedicated GDrive paths. Missing Anima files produce explicit
+startup warnings, but do not prevent a Pod that can still run SDXL.
+
 ## Checkpoint management
 
 `gdrive:sdxl_model` is the source of truth for the available Checkpoint list.
@@ -95,11 +125,17 @@ For every GDrive-relative file path:
 2. A same-name cache is reused when its file size matches the GDrive manifest.
 3. New or changed files are downloaded to `.part`, size-checked, and moved
    into place only after a successful download.
-4. ComfyUI receives a symlink at
-   `ComfyUI/models/checkpoints/<relative path>` pointing to the persistent
-   cache.
-5. Stale ComfyUI Checkpoint symlinks are removed when they are absent from the
-   current GDrive manifest. Old cache files are not automatically deleted.
+4. ComfyUI receives symlinks at both
+   `ComfyUI/models/checkpoints/<relative path>` and
+   `ComfyUI/models/diffusion_models/<relative path>`, each pointing to the
+   same persistent cache file.
+5. Stale symlinks created by this cache integration are removed from both
+   ComfyUI model directories when they are absent from the current GDrive
+   manifest. Old cache files are not automatically deleted.
+
+The second ComfyUI link never downloads or copies the model again. Both loader
+folders therefore consume the same Network Volume file, which keeps large
+Anima and SDXL model files from consuming duplicate storage.
 
 If `/workspace` is not mounted as a Network Volume, bootstrap stops instead of
 copying Checkpoints to Container Disk. Legacy regular Checkpoint files found
@@ -108,13 +144,15 @@ unmanaged leftovers are preserved in a timestamped migration backup.
 
 ## Other model files
 
-LoRA, Upscaler, and Detailer files continue to be copied from GDrive using
-their existing extension filters. They are persistent model files under the
+Text Encoder, VAE, LoRA, Upscaler, and Detailer files are copied from GDrive
+using their extension filters. They are persistent model files under the
 ComfyUI tree on `/workspace`; only output and temp are redirected to the
 Container Disk.
 
 | GDrive path | ComfyUI destination | Extensions |
 | --- | --- | --- |
+| `gdrive:anima_text_encoder` | `ComfyUI/models/text_encoders` | `*.safetensors`, `*.pt`, `*.pth` |
+| `gdrive:anima_vae` | `ComfyUI/models/vae` | `*.safetensors`, `*.pt`, `*.pth` |
 | `gdrive:sdxl_lora` | `ComfyUI/models/loras` | `*.safetensors`, `*.ckpt`, `*.pt` |
 | `gdrive:sdxl_upscaler` | `ComfyUI/models/upscale_models` | `*.pth`, `*.pt`, `*.safetensors` |
 | `gdrive:sdxl_detailer` | `ComfyUI/models/ultralytics/bbox` | `*.pt`, `*.pth` |
@@ -202,6 +240,10 @@ Storage:
 
 - `COMFYUI_DIR` (default: `/workspace/runpod-slim/ComfyUI`)
 - `NETWORK_CHECKPOINT_DIR` (default: `/workspace/models/checkpoints`)
+- `CHECKPOINT_DIR` (default: `${COMFYUI_DIR}/models/checkpoints`)
+- `DIFFUSION_MODEL_DIR` (default: `${COMFYUI_DIR}/models/diffusion_models`)
+- `TEXT_ENCODER_DIR` (default: `${COMFYUI_DIR}/models/text_encoders`)
+- `VAE_DIR` (default: `${COMFYUI_DIR}/models/vae`)
 - `LOCAL_EPHEMERAL_ROOT` (default: `/runpod-local`)
 - `LOCAL_OUTPUT_DIR` (default: `/runpod-local/output`)
 - `LOCAL_TEMP_DIR` (default: `/runpod-local/temp`)
@@ -210,6 +252,8 @@ GDrive and output worker:
 
 - `RCLONE_REMOTE_NAME` (default: `gdrive`)
 - `GDRIVE_MODEL_PATH` (default: `sdxl_model`)
+- `GDRIVE_TEXT_ENCODER_PATH` (default: `anima_text_encoder`)
+- `GDRIVE_VAE_PATH` (default: `anima_vae`)
 - `GDRIVE_LORA_PATH` (default: `sdxl_lora`)
 - `GDRIVE_UPSCALER_PATH` (default: `sdxl_upscaler`)
 - `GDRIVE_DETAILER_PATH` (default: `sdxl_detailer`)
@@ -264,6 +308,10 @@ test -d /workspace/runpod-slim
 test "$(readlink -f /workspace/runpod-slim/ComfyUI/output)" = /runpod-local/output
 test "$(readlink -f /workspace/runpod-slim/ComfyUI/temp)" = /runpod-local/temp
 find /workspace/runpod-slim/ComfyUI/models/checkpoints -type l -print
+find /workspace/runpod-slim/ComfyUI/models/diffusion_models -type l -print
+test "$(readlink -f /workspace/runpod-slim/ComfyUI/models/diffusion_models/anima-base-v1.0.safetensors)" = /workspace/models/checkpoints/anima-base-v1.0.safetensors
+test -f /workspace/runpod-slim/ComfyUI/models/text_encoders/qwen_3_06b_base.safetensors
+test -f /workspace/runpod-slim/ComfyUI/models/vae/qwen_image_vae.safetensors
 find /runpod-local/output -maxdepth 2 -type f -print
 find /runpod-local/temp -maxdepth 2 -type f -print
 ~~~
