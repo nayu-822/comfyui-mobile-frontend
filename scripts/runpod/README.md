@@ -188,6 +188,11 @@ dependencies are installed with the ComfyUI runtime Python in this order:
 2. `python3.12`
 3. `python3`
 
+Anima requires a `comfy-kitchen` version exposing
+`rms_rope_split_half`. Bootstrap checks this with the ComfyUI runtime Python
+and upgrades only `comfy-kitchen` when the feature is missing. The existing
+`PIP_CONSTRAINT` remains active during that targeted upgrade.
+
 Impact Pack defaults to ref `Main` and Impact Subpack defaults to ref `main`.
 SAM2-related requirements are excluded by default; set
 `INSTALL_SAM2_DEPENDENCIES=true` only when needed.

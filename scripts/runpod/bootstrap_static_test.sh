@@ -79,6 +79,9 @@ assert_contains "$BOOTSTRAP" 'RUNTIME_PIP_CONSTRAINT_FILE="${RUNTIME_PIP_CONSTRA
 assert_contains "$BOOTSTRAP" '/opt/comfyui-runtime-constraints.txt'
 assert_contains "$BOOTSTRAP" 'configure_runtime_pip_constraints()'
 assert_contains "$BOOTSTRAP" 'export PIP_CONSTRAINT'
+assert_contains "$BOOTSTRAP" 'ensure_comfy_kitchen_for_anima()'
+assert_contains "$BOOTSTRAP" 'hasattr(comfy_kitchen, "rms_rope_split_half")'
+assert_contains "$BOOTSTRAP" '"$COMFYUI_PYTHON" -m pip install -U comfy-kitchen'
 assert_contains "$BOOTSTRAP" 'pip install -U --pre "$COMFYUI_MANAGER_PACKAGE"'
 assert_contains "$BOOTSTRAP" 'pip show "$COMFYUI_MANAGER_PACKAGE"'
 assert_contains "$BOOTSTRAP" 'manager_requirements.txt'
@@ -135,6 +138,8 @@ assert_not_contains "$SYNC" 'copy "${RCLONE_REMOTE_NAME}:$GDRIVE_OUTPUT_PATH"'
 assert_order "$BOOTSTRAP" 'prepare_comfyui' 'configure_runtime_pip_constraints'
 assert_order "$BOOTSTRAP" 'configure_runtime_pip_constraints' 'ensure_comfyui_runtime_venv'
 assert_order "$BOOTSTRAP" 'configure_runtime_pip_constraints' 'ensure_comfyui_manager'
+assert_order "$BOOTSTRAP" 'resolve_comfyui_python' 'ensure_comfy_kitchen_for_anima'
+assert_order "$BOOTSTRAP" 'ensure_comfyui_manager' 'ensure_comfy_kitchen_for_anima'
 assert_order "$BOOTSTRAP" 'sync_gdrive_checkpoints' 'copy_gdrive_local_models'
 assert_order "$BOOTSTRAP" 'copy_gdrive_local_models' 'verify_anima_model_files'
 
@@ -195,6 +200,58 @@ configure_runtime_pip_constraints
 
 unset PIP_CONSTRAINT
 RUNTIME_PIP_CONSTRAINT_FILE="$behavior_tmp/missing-constraints.txt" configure_runtime_pip_constraints
+
+kitchen_python="$behavior_tmp/comfyui-python"
+kitchen_state="$behavior_tmp/comfy-kitchen-state"
+kitchen_install_count="$behavior_tmp/comfy-kitchen-install-count"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -Eeuo pipefail' \
+  'if [[ "${1:-}" == "-m" ]]; then' \
+  '  [[ "${2:-}" == "pip" && "${3:-}" == "install" && "${4:-}" == "-U" && "${5:-}" == "comfy-kitchen" ]] || exit 2' \
+  '  : "${PIP_CONSTRAINT:?PIP_CONSTRAINT must be preserved}"' \
+  '  count=0' \
+  '  if [[ -f "$COMFY_KITCHEN_TEST_INSTALL_COUNT" ]]; then count="$(cat "$COMFY_KITCHEN_TEST_INSTALL_COUNT")"; fi' \
+  '  printf "%s\\n" "$((count + 1))" > "$COMFY_KITCHEN_TEST_INSTALL_COUNT"' \
+  '  if [[ "${COMFY_KITCHEN_TEST_UPGRADE_SUPPORT:-false}" == "true" ]]; then printf "%s\\n" present > "$COMFY_KITCHEN_TEST_STATE"; fi' \
+  '  exit 0' \
+  'fi' \
+  'cat >/dev/null' \
+  'if [[ -f "$COMFY_KITCHEN_TEST_STATE" ]] && grep -Fqx present "$COMFY_KITCHEN_TEST_STATE"; then exit 0; fi' \
+  'exit 1' > "$kitchen_python"
+chmod +x "$kitchen_python"
+export COMFY_KITCHEN_TEST_STATE="$kitchen_state"
+export COMFY_KITCHEN_TEST_INSTALL_COUNT="$kitchen_install_count"
+export PIP_CONSTRAINT="$behavior_tmp/runtime-constraints.txt"
+COMFYUI_PYTHON="$kitchen_python"
+printf '%s\n' 0 > "$kitchen_install_count"
+printf '%s\n' present > "$kitchen_state"
+export COMFY_KITCHEN_TEST_UPGRADE_SUPPORT=false
+ensure_comfy_kitchen_for_anima
+[[ "$(cat "$kitchen_install_count")" == "0" ]] || {
+  echo "comfy-kitchen behavior test failed: supported runtime was upgraded" >&2
+  exit 1
+}
+
+printf '%s\n' missing > "$kitchen_state"
+export COMFY_KITCHEN_TEST_UPGRADE_SUPPORT=true
+ensure_comfy_kitchen_for_anima
+[[ "$(cat "$kitchen_install_count")" == "1" && \
+  "$(cat "$kitchen_state")" == "present" ]] || {
+  echo "comfy-kitchen behavior test failed: missing feature was not upgraded and verified" >&2
+  exit 1
+}
+
+printf '%s\n' missing > "$kitchen_state"
+export COMFY_KITCHEN_TEST_UPGRADE_SUPPORT=false
+if (ensure_comfy_kitchen_for_anima >/dev/null 2>&1); then
+  echo "comfy-kitchen behavior test failed: missing feature was not fatal after upgrade" >&2
+  exit 1
+fi
+[[ "$(cat "$kitchen_install_count")" == "2" ]] || {
+  echo "comfy-kitchen behavior test failed: failed verification did not attempt one targeted upgrade" >&2
+  exit 1
+}
 
 if ln -s "$MOBILE_FRONTEND_SRC" "$MOBILE_CUSTOM_NODE_DIR" 2>/dev/null; then
   :

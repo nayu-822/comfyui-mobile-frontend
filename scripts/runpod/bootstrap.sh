@@ -330,6 +330,42 @@ resolve_comfyui_python() {
   log "using ComfyUI Python: $COMFYUI_PYTHON"
 }
 
+ensure_comfy_kitchen_for_anima() {
+  [[ -n "$COMFYUI_PYTHON" ]] || {
+    log "ComfyUI Python is not resolved; cannot verify comfy-kitchen Anima support"
+    exit 1
+  }
+
+  if "$COMFYUI_PYTHON" - <<'PY'
+import comfy_kitchen
+raise SystemExit(
+    0 if hasattr(comfy_kitchen, "rms_rope_split_half") else 1
+)
+PY
+  then
+    log "comfy-kitchen supports rms_rope_split_half"
+    return 0
+  fi
+
+  log "comfy-kitchen is missing rms_rope_split_half; upgrading"
+  if ! "$COMFYUI_PYTHON" -m pip install -U comfy-kitchen; then
+    log "comfy-kitchen upgrade failed; Anima support cannot be verified"
+    exit 1
+  fi
+
+  if ! "$COMFYUI_PYTHON" - <<'PY'
+import comfy_kitchen
+raise SystemExit(
+    0 if hasattr(comfy_kitchen, "rms_rope_split_half") else 1
+)
+PY
+  then
+    log "comfy-kitchen upgrade completed but rms_rope_split_half is still missing"
+    exit 1
+  fi
+  log "verified comfy-kitchen Anima support"
+}
+
 ensure_comfyui_manager() {
   if ! is_enabled "$ENABLE_COMFYUI_MANAGER"; then
     log "ComfyUI Manager installation disabled"
@@ -1098,6 +1134,7 @@ bootstrap_main() {
   verify_mobile_frontend_install
   verify_comfyui_manager_install
   verify_required_custom_node_files
+  ensure_comfy_kitchen_for_anima
 
   if [[ ! -x "$START_SCRIPT" ]]; then
     log "start script is not executable: $START_SCRIPT"
