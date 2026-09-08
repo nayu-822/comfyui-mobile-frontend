@@ -27,7 +27,7 @@ import type { ViewerImage } from '@/utils/viewerImages';
 import { getMediaType } from '@/utils/media';
 import {
   deleteFile, moveFiles, MoveConflictError, type MoveFileConflict, createFolder, getUserImages,
-  getRecursiveFolders, renameFile, getScreenPreviewUrl,
+  getRecursiveFolders, renameFile, getScreenPreviewUrl, savePreset,
 } from '@/api/client';
 import {
   FolderIcon, BookmarkIconSvg, BookmarkOutlineIcon, DownloadDeviceIcon, EyeIcon, EyeOffIcon, TrashIcon,
@@ -48,6 +48,7 @@ import { Dialog } from '@/components/modals/Dialog';
 import {
   loadWorkflowFromFile,
   resolveFilePath,
+  resolveFileSource,
   resolveViewerItemWorkflowLoad,
 } from '@/utils/workflowOperations';
 import { resolveSelectionToggle, type SelectionAnchor } from '@/utils/selectionRange';
@@ -67,6 +68,9 @@ export const OutputsPanel = memo(function OutputsPanel({ visible }: { visible: b
   // Fine-grained selectors: a bare useOutputsStore() destructure would
   // re-render this whole panel on every store write, even while hidden.
   const source = useOutputsStore((s) => s.source);
+  const currentGenerationMode = useNavigationStore(
+    (s) => s.currentGenerationMode ?? 'sdxl',
+  );
   const currentFolder = useOutputsStore((s) => s.currentFolder);
   const resolveEmptyMessage = () => {
     if (currentFolder) return t('No images in this folder');
@@ -369,6 +373,16 @@ export const OutputsPanel = memo(function OutputsPanel({ visible }: { visible: b
         setOutputsViewerOpen(false);
       }
     });
+  };
+
+  const handleOutputsViewerSavePreset = (item: ViewerImage) => {
+    if (!item.file || item.file.type !== 'image' || resolveFileSource(item.file) !== 'output') {
+      return Promise.reject(new Error('Preset saving is available for generated output images only.'));
+    }
+    return savePreset(
+      resolveFilePath(item.file, 'output'),
+      currentGenerationMode,
+    );
   };
 
   const handleOutputsViewerLoadWorkflow = (item: ViewerImage) => {
@@ -1970,6 +1984,7 @@ export const OutputsPanel = memo(function OutputsPanel({ visible }: { visible: b
            if (!item.src) return;
            return shareOrDownloadFile(item.src, item.filename || item.file?.name || 'image.png');
          }}
+         onSavePreset={handleOutputsViewerSavePreset}
          showMetadataToggle
         />
       </div>

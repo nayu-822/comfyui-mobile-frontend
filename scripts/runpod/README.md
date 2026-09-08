@@ -172,10 +172,10 @@ files already on Container Disk, then moved to a timestamped migration backup;
 they are never unconditionally deleted. Existing output is also copied to
 Google Drive before migration when output sync is enabled.
 
-`sync_outputs.sh` performs one-way `rclone copy` from the physical
+`sync_outputs.sh` performs one-way recursive `rclone copy` from the physical
 `/runpod-local/output` directory to `gdrive:sdxl_output`. It never copies old
 GDrive images back to the Pod and preserves subdirectories such as
-`YYYYMMDD_normal/` and `YYYYMMDD_upscale/`.
+`YYYYMMDD_normal/`, `YYYYMMDD_upscale/`, and `preset/sdxl/` or `preset/anima/`.
 
 ## ComfyUI Python and custom nodes
 

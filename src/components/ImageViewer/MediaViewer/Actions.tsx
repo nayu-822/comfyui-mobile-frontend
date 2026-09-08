@@ -5,6 +5,7 @@ import { RejectButton } from "@/components/buttons/RejectButton";
 import { LoadWorkflowButton } from "@/components/buttons/LoadWorkflowButton";
 import { UseInWorkflowButton } from "@/components/buttons/UseInWorkflowButton";
 import { MetadataButton } from "@/components/buttons/MetadataButton";
+import { SavePresetButton } from "@/components/buttons/SavePresetButton";
 
 interface MediaViewerActionsProps {
   isVideo: boolean;
@@ -16,6 +17,8 @@ interface MediaViewerActionsProps {
   canReject: boolean;
   isRejected: boolean;
   canDownload: boolean;
+  canSavePreset?: boolean;
+  savePresetLoading?: boolean;
   deleteDisabled?: boolean;
   loadWorkflowProgress?: number | null;
   onDelete: () => void;
@@ -25,6 +28,7 @@ interface MediaViewerActionsProps {
   onToggleFavorite: () => void;
   onReject: () => void;
   onDownload: () => void | Promise<void>;
+  onSavePreset?: () => void | Promise<void>;
   // Forwarded to the download button for the per-device download-history badge
   // (disk icon -> cloud "downloaded" indicator). That store ships with download
   // history in 3.1.1; in this release the id is threaded but nothing renders a
@@ -48,6 +52,8 @@ export function MediaViewerActions({
   canReject,
   isRejected,
   canDownload,
+  canSavePreset = false,
+  savePresetLoading = false,
   deleteDisabled,
   loadWorkflowProgress,
   onDelete,
@@ -57,6 +63,7 @@ export function MediaViewerActions({
   onToggleFavorite,
   onReject,
   onDownload,
+  onSavePreset,
   downloadFileId,
   onDownloadLoadingChange,
   rightInset,
@@ -86,6 +93,9 @@ export function MediaViewerActions({
             fileId={downloadFileId}
             onLoadingChange={onDownloadLoadingChange}
           />
+        )}
+        {canSavePreset && onSavePreset && (
+          <SavePresetButton onClick={onSavePreset} loading={savePresetLoading} />
         )}
         {canLoadWorkflow && (
           <LoadWorkflowButton

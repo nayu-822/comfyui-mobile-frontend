@@ -88,6 +88,93 @@ describe('MediaViewer workflow availability', () => {
     vi.unstubAllGlobals();
   });
 
+  it('offers Save preset for a generated output and reports the saved mode', async () => {
+    const onSavePreset = vi.fn().mockResolvedValue({
+      ok: true,
+      mode: 'anima',
+      relativePath: 'preset/anima/render.png',
+    });
+
+    await act(async () => {
+      root.render(
+        <MediaViewer
+          open={true}
+          items={[makeImageItem('output/renders/render.png', 'render.png')]}
+          index={0}
+          onIndexChange={() => {}}
+          onClose={() => {}}
+          onDelete={() => {}}
+          onLoadWorkflow={() => {}}
+          onLoadInWorkflow={() => {}}
+          onSavePreset={onSavePreset}
+        />,
+      );
+    });
+
+    const button = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Save preset"]',
+    );
+    expect(button).not.toBeNull();
+
+    await act(async () => {
+      button?.click();
+      await Promise.resolve();
+    });
+
+    expect(onSavePreset).toHaveBeenCalledWith(expect.objectContaining({
+      filename: 'render.png',
+      file: expect.objectContaining({ id: 'output/renders/render.png' }),
+    }));
+    expect(document.body.textContent).toContain('Saved to preset/anima');
+  });
+
+  it('does not offer Save preset for non-output assets', async () => {
+    await act(async () => {
+      root.render(
+        <MediaViewer
+          open={true}
+          items={[makeImageItem('input/imported.png', 'imported.png')]}
+          index={0}
+          onIndexChange={() => {}}
+          onClose={() => {}}
+          onDelete={() => {}}
+          onLoadWorkflow={() => {}}
+          onLoadInWorkflow={() => {}}
+          onSavePreset={vi.fn()}
+        />,
+      );
+    });
+
+    expect(document.querySelector('button[aria-label="Save preset"]')).toBeNull();
+  });
+
+  it('reports a clear error when preset saving fails', async () => {
+    const onSavePreset = vi.fn().mockRejectedValue(new Error('Invalid output path'));
+
+    await act(async () => {
+      root.render(
+        <MediaViewer
+          open={true}
+          items={[makeImageItem('output/render.png', 'render.png')]}
+          index={0}
+          onIndexChange={() => {}}
+          onClose={() => {}}
+          onDelete={() => {}}
+          onLoadWorkflow={() => {}}
+          onLoadInWorkflow={() => {}}
+          onSavePreset={onSavePreset}
+        />,
+      );
+    });
+
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('button[aria-label="Save preset"]')?.click();
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent).toContain('Preset save failed: Invalid output path');
+  });
+
   it('shows load workflow button for video when availability endpoint reports true', async () => {
     vi.useFakeTimers();
     getFileWorkflowAvailabilityMock.mockResolvedValue(true);

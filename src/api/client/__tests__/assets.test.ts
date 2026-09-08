@@ -4,6 +4,7 @@ import {
   getUserImages,
   loadFileState,
   moveFiles,
+  savePreset,
   resolveInputAliases,
   setFileState,
 } from '../assets';
@@ -246,5 +247,45 @@ describe('resolveInputAliases', () => {
 
     await expect(resolveInputAliases(['.mi-deadbeef.png']))
       .rejects.toThrow('alias cache unavailable');
+  });
+});
+
+describe('savePreset', () => {
+  it('POSTs the output-relative path and current mode', async () => {
+    const fetchMock = mockFetch({
+      jsonBody: {
+        ok: true,
+        mode: 'anima',
+        relativePath: 'preset/anima/render.png',
+      },
+    });
+
+    await expect(savePreset('20260908_normal/render.png', 'anima')).resolves.toEqual({
+      ok: true,
+      mode: 'anima',
+      relativePath: 'preset/anima/render.png',
+    });
+    expect(fetchMock).toHaveBeenCalledWith('/mobile/api/presets/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        relativePath: '20260908_normal/render.png',
+        mode: 'anima',
+      }),
+    });
+  });
+
+  it('surfaces a backend error', async () => {
+    mockFetch({ ok: false, status: 403, jsonBody: { error: 'Invalid output path' } });
+
+    await expect(savePreset('../secret.png', 'sdxl')).rejects.toThrow('Invalid output path');
+  });
+
+  it('rejects a malformed success response', async () => {
+    mockFetch({ jsonBody: { ok: true, mode: 'sdxl' } });
+
+    await expect(savePreset('render.png', 'sdxl')).rejects.toThrow(
+      'Invalid preset save response',
+    );
   });
 });

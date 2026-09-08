@@ -53,6 +53,7 @@ So this mobile frontend is my attempt at improving upon the user experience of C
   - inspect image metadata (just a few core attributes for now)
   - mark outputs as favorites so you can find them with filters later
   - download outputs directly to your device with one click
+  - save Latest or any Outputs image as a metadata-preserving preset
   - Load workflows from images, or pull images directly into workflows as inputs, hassle-free
 ### ☑️ **Outputs/Inputs Browser:** Inspect your server's outputs and inputs folders
   - search/filter/sort your outputs or inputs — including search by the prompt baked into an image
@@ -63,6 +64,21 @@ So this mobile frontend is my attempt at improving upon the user experience of C
 - a rich model/LoRA picker with thumbnails, version, and base-model badges (works with or without LoRA Manager)
 ### ☑️ **Custom Nodes Manager:** Browse, install, update, enable/disable, and uninstall custom nodes from the app
 ### ☑️ **Dark Theme:** A slate/cyan dark UI tuned for mobile
+
+### Preset Save
+
+The Media Viewer can save the currently displayed generated image from Latest or
+Outputs into the mode-specific preset folder. The server copies the original
+file bytes so ComfyUI workflow and prompt metadata remain intact; there is no
+preset-specific load UI because the existing **Restore parameters from image**
+action can be used after retrieving a preset manually.
+
+On RunPod, presets are stored and synchronized as:
+
+~~~text
+gdrive:sdxl_output/preset/sdxl/
+gdrive:sdxl_output/preset/anima/
+~~~
 
 ## Planned Features
 

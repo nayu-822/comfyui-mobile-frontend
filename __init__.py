@@ -45,6 +45,7 @@ _mobile_checkpoints = _import_module('mobile_checkpoints')
 _mobile_loras = _import_module('mobile_loras')
 # General per-server frontend preferences (e.g. autocomplete opt-in).
 _mobile_app_prefs = _import_module('mobile_app_prefs')
+_mobile_presets = _import_module('mobile_presets')
 list_files = _file_utils.list_files
 entry_matches_name_or_path = _file_utils.entry_matches_name_or_path
 _is_within_dir = _file_utils.is_within_dir
@@ -1373,6 +1374,22 @@ def setup_mobile_route():
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
 
+    async def api_save_preset(request):
+        """Copy one generated output image into the mode-specific preset tree."""
+        try:
+            data = await request.json()
+            result = await asyncio.get_running_loop().run_in_executor(
+                None,
+                _mobile_presets.save_preset,
+                data.get('relativePath'),
+                data.get('mode'),
+            )
+            return web.json_response(result)
+        except _mobile_presets.PresetSaveError as error:
+            return web.json_response({"error": str(error)}, status=error.status_code)
+        except Exception as error:
+            return web.json_response({"error": str(error)}, status=500)
+
     async def api_restart_server(request):
         try:
             data = await request.json()
@@ -1829,6 +1846,7 @@ def setup_mobile_route():
     mobile_app.router.add_post('/api/workflows/folder', api_create_workflow_folder)
     mobile_app.router.add_delete('/api/workflows/folder', api_delete_workflow_folder)
     mobile_app.router.add_post('/api/files/copy-to-input', api_copy_file_to_input)
+    mobile_app.router.add_post('/api/presets/save', api_save_preset)
     mobile_app.router.add_post('/api/restart', api_restart_server)
     mobile_app.router.add_get('/api/checkpoints', api_checkpoints)
     mobile_app.router.add_get('/api/loras', api_loras)

@@ -10,7 +10,7 @@ import { useOutputsStore } from '@/hooks/useOutputs';
 import { useOverallProgress } from '@/hooks/useOverallProgress';
 import { useHistoryWorkflowByFileId } from '@/hooks/useHistoryWorkflowByFileId';
 import { buildOutputPreferredViewerImages, buildViewerImages, getHistoryImageFileId, type ViewerImage } from '@/utils/viewerImages';
-import { deleteFile, type FileItem } from '@/api/client';
+import { deleteFile, savePreset, type FileItem } from '@/api/client';
 import { shareOrDownloadFile } from '@/utils/downloads';
 import { Dialog } from '@/components/modals/Dialog';
 import { UseImageModal } from '@/components/modals/UseImageModal';
@@ -59,6 +59,9 @@ export function ImageViewer({ onClose }: ImageViewerProps) {
   const isExecuting = useWorkflowStore((s) => s.isExecuting);
   const executingPromptId = useWorkflowStore((s) => s.executingPromptId);
   const setCurrentPanel = useNavigationStore((s) => s.setCurrentPanel);
+  const currentGenerationMode = useNavigationStore(
+    (s) => s.currentGenerationMode ?? 'sdxl',
+  );
   const loadWorkflow = useWorkflowStore((s) => s.loadWorkflow);
   const running = useQueueStore((s) => s.running);
   const pending = useQueueStore((s) => s.pending);
@@ -642,6 +645,16 @@ export function ImageViewer({ onClose }: ImageViewerProps) {
     return shareOrDownloadFile(item.src, filename);
   };
 
+  const handleSavePreset = (item: ViewerImage) => {
+    if (!item.file || item.file.type !== 'image' || resolveFileSource(item.file) !== 'output') {
+      return Promise.reject(new Error('Preset saving is available for generated output images only.'));
+    }
+    return savePreset(
+      resolveFilePath(item.file, 'output'),
+      currentGenerationMode,
+    );
+  };
+
   const handleLoadNodeClose = () => {
     setLoadNodeOpen(false);
     setLoadNodeTarget(null);
@@ -671,6 +684,7 @@ export function ImageViewer({ onClose }: ImageViewerProps) {
         onReject={handleReject}
         isRejected={isItemRejected}
         onDownload={handleDownload}
+        onSavePreset={handleSavePreset}
         showMetadataToggle
         showLoadingPlaceholder={showLoadingPlaceholder}
         loadingPreviewSrc={loadingPreviewSrc}

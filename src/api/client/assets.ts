@@ -623,3 +623,39 @@ export async function renameFile(
     throw new Error(error.error || 'Failed to rename file');
   }
 }
+
+export type PresetMode = 'sdxl' | 'anima';
+
+export interface PresetSaveResult {
+  ok: true;
+  mode: PresetMode;
+  relativePath: string;
+}
+
+/** Save one existing generated output as a raw, metadata-preserving preset. */
+export async function savePreset(
+  relativePath: string,
+  mode?: PresetMode,
+): Promise<PresetSaveResult> {
+  const response = await fetch('/mobile/api/presets/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      relativePath,
+      ...(mode ? { mode } : {}),
+    }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Preset save failed');
+  }
+  const result = await response.json() as Partial<PresetSaveResult>;
+  if (
+    result.ok !== true
+    || (result.mode !== 'sdxl' && result.mode !== 'anima')
+    || typeof result.relativePath !== 'string'
+  ) {
+    throw new Error('Invalid preset save response');
+  }
+  return result as PresetSaveResult;
+}

@@ -25,6 +25,7 @@ import {
   getImageMetadata,
   getMediaThumbnailUrlFromAssetUrl,
   getPlayableVideoUrl,
+  type PresetSaveResult,
 } from '@/api/client';
 import { resolveFilePath, resolveFileSource } from '@/utils/workflowOperations';
 import { reportVideoPlaybackIssue } from '@/utils/mediaDiagnostics';
@@ -48,6 +49,7 @@ interface MediaViewerProps {
   onReject?: (item: ViewerImage) => void;
   isRejected?: (item: ViewerImage) => boolean;
   onDownload?: (item: ViewerImage) => Promise<DownloadOutcome | undefined> | void;
+  onSavePreset?: (item: ViewerImage) => Promise<PresetSaveResult> | PresetSaveResult | void;
   showMetadataToggle?: boolean;
   showLoadingPlaceholder?: boolean;
   // Live latent preview painted behind the placeholder's progress bar while a
@@ -126,6 +128,7 @@ export function MediaViewer({
   onReject,
   isRejected,
   onDownload,
+  onSavePreset,
   showMetadataToggle = false,
   showLoadingPlaceholder = false,
   loadingPreviewSrc = null,
@@ -215,6 +218,7 @@ export function MediaViewer({
   const [metadataLoading, setMetadataLoading] = useState<Record<string, boolean>>({});
   const [workflowAvailableById, setWorkflowAvailableById] = useState<Record<string, boolean>>({});
   const [videoError, setVideoError] = useState(false);
+  const [presetSaving, setPresetSaving] = useState(false);
   // Pixel resolution of the currently displayed media, shown under the filename.
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   // Full-screen image srcs that have finished decoding at least once (current
@@ -305,6 +309,12 @@ export function MediaViewer({
   const workflowAvailabilityKnown = fileId ? Object.prototype.hasOwnProperty.call(workflowAvailableById, fileId) : false;
   const canLoadWorkflow = Boolean(currentItem?.workflow)
     || (fileId ? Boolean(workflowAvailableById[fileId]) : false);
+  const canSavePresetCurrent = Boolean(
+    currentItem?.file
+    && currentItem.file.type === 'image'
+    && resolveFileSource(currentItem.file) === 'output'
+    && onSavePreset,
+  );
 
   const resetIdleTimer = useCallback(() => {
     setIsIdle(false);
@@ -388,6 +398,30 @@ export function MediaViewer({
       () => showDownloadToast(t('Download failed.'), 'error', 3000),
     );
   }, [currentItem, onDownload, resetIdleTimer, showDownloadToast, t]);
+
+  const handleSavePresetClick = useCallback(async () => {
+    if (!currentItem || !onSavePreset || !canSavePresetCurrent || presetSaving) return;
+    resetIdleTimer();
+    setPresetSaving(true);
+    try {
+      const result = await onSavePreset(currentItem);
+      if (!result) throw new Error(t('Preset save failed'));
+      showDownloadToast(
+        t('Saved to preset/{mode}', { mode: result.mode }),
+        'success',
+        2500,
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : '';
+      showDownloadToast(
+        detail ? `${t('Preset save failed')}: ${detail}` : t('Preset save failed'),
+        'error',
+        4000,
+      );
+    } finally {
+      setPresetSaving(false);
+    }
+  }, [canSavePresetCurrent, currentItem, onSavePreset, presetSaving, resetIdleTimer, showDownloadToast, t]);
 
   // Show an in-flight message right when loading begins (DownloadButton
   // signals via onLoadingChange). Only the native-iOS path saves to Photos —
@@ -1647,6 +1681,8 @@ export function MediaViewer({
               canReject={canRejectCurrent}
               isRejected={currentIsRejected}
               canDownload={canDownloadCurrent}
+              canSavePreset={canSavePresetCurrent}
+              savePresetLoading={presetSaving}
               // Favorited items can't be deleted — keep the button visible but
               // disabled so the protection is discoverable.
               deleteDisabled={currentIsFavorited}
@@ -1658,6 +1694,7 @@ export function MediaViewer({
               onToggleFavorite={handleToggleFavoriteClick}
               onReject={handleRejectClick}
               onDownload={handleDownloadClick}
+              onSavePreset={handleSavePresetClick}
               downloadFileId={fileId}
               onDownloadLoadingChange={handleDownloadLoadingChange}
               rightInset={rightControlsInset}
