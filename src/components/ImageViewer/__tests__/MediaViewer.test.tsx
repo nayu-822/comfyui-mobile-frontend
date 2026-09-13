@@ -178,8 +178,10 @@ describe('MediaViewer workflow availability', () => {
   it('opens Save to GDrive for a generated output and reports the saved path', async () => {
     const onSaveToGDrive = vi.fn().mockResolvedValue({
       ok: true,
-      targetPath: '生成画像/kotone/01.png',
-      remote: 'gdrive:生成画像/kotone/01.png',
+      targetFolder: '生成画像/kotone/classroom',
+      filename: '002.png',
+      targetPath: '生成画像/kotone/classroom/002.png',
+      remote: 'gdrive:生成画像/kotone/classroom/002.png',
     });
 
     await act(async () => {
@@ -208,9 +210,10 @@ describe('MediaViewer workflow availability', () => {
     });
 
     const input = document.querySelector<HTMLInputElement>(
-      'input[aria-label="Google Drive destination path"]',
+      'input[aria-label="Google Drive destination folder"]',
     );
     expect(input).not.toBeNull();
+    expect(input?.value).toBe('');
     expect(document.body.textContent).toContain('Save to Google Drive');
 
     await act(async () => {
@@ -218,7 +221,7 @@ describe('MediaViewer workflow availability', () => {
         HTMLInputElement.prototype,
         'value',
       )?.set;
-      setter?.call(input, '生成画像\\kotone\\01');
+      setter?.call(input, '生成画像\\kotone\\classroom');
       input?.dispatchEvent(new Event('input', { bubbles: true }));
     });
 
@@ -234,9 +237,18 @@ describe('MediaViewer workflow availability', () => {
         filename: 'render.png',
         file: expect.objectContaining({ id: 'output/renders/render.png' }),
       }),
-      '生成画像\\kotone\\01',
+      '生成画像\\kotone\\classroom',
     );
-    expect(document.body.textContent).toContain('Saved to Google Drive: 生成画像/kotone/01.png');
+    expect(document.body.textContent).toContain('Saved to Google Drive: 生成画像/kotone/classroom/002.png');
+
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(
+        'button[aria-label="Save to GDrive"]',
+      )?.click();
+    });
+    expect(document.querySelector<HTMLInputElement>(
+      'input[aria-label="Google Drive destination folder"]',
+    )?.value).toBe('生成画像\\kotone\\classroom');
   });
 
   it('keeps the Save to GDrive dialog open and shows backend errors', async () => {
@@ -274,7 +286,7 @@ describe('MediaViewer workflow availability', () => {
 
     expect(document.querySelector('[role="alert"]')?.textContent)
       .toContain('A file already exists at the destination.');
-    expect(document.querySelector('input[aria-label="Google Drive destination path"]'))
+    expect(document.querySelector('input[aria-label="Google Drive destination folder"]'))
       .not.toBeNull();
   });
 

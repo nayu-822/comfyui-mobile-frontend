@@ -1399,7 +1399,7 @@ def setup_mobile_route():
                 None,
                 _mobile_gdrive.save_to_gdrive,
                 data.get('relativePath'),
-                data.get('targetPath'),
+                data.get('targetFolder'),
             )
             return web.json_response(result)
         except _mobile_gdrive.GDriveSaveError as error:

@@ -385,13 +385,13 @@ export const OutputsPanel = memo(function OutputsPanel({ visible }: { visible: b
     );
   };
 
-  const handleOutputsViewerSaveToGDrive = (item: ViewerImage, targetPath: string) => {
+  const handleOutputsViewerSaveToGDrive = (item: ViewerImage, targetFolder: string) => {
     if (!item.file || item.file.type !== 'image' || resolveFileSource(item.file) !== 'output') {
       return Promise.reject(new Error('GDrive saving is available for generated output images only.'));
     }
     return saveToGDrive(
       resolveFilePath(item.file, 'output'),
-      targetPath,
+      targetFolder,
     );
   };
 

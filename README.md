@@ -54,7 +54,7 @@ So this mobile frontend is my attempt at improving upon the user experience of C
   - mark outputs as favorites so you can find them with filters later
   - download outputs directly to your device with one click
   - save Latest or any Outputs image as a metadata-preserving preset
-  - save Latest or any Outputs image manually to an arbitrary Google Drive path
+  - save Latest or any Outputs image manually to an arbitrary Google Drive folder
   - Load workflows from images, or pull images directly into workflows as inputs, hassle-free
 ### ☑️ **Outputs/Inputs Browser:** Inspect your server's outputs and inputs folders
   - search/filter/sort your outputs or inputs — including search by the prompt baked into an image
@@ -84,17 +84,21 @@ gdrive:sdxl_output/preset/anima/
 ### Save to Google Drive
 
 The image viewer also provides **Save to GDrive** for the currently displayed
-generated image from Latest or Outputs. Enter a target path relative to the
-Google Drive root; both backslashes and slashes are accepted as folder
-separators. For example, `生成画像\藤田ことね\教室\01.png` is uploaded to
-`gdrive:生成画像/藤田ことね/教室/01.png` — it is not placed under
+generated image from Latest or Outputs. Enter a destination folder relative to
+the Google Drive root; both backslashes and slashes are accepted as folder
+separators. The filename is assigned automatically as `000.png`, `001.png`,
+and so on based on the existing files in that folder. For example,
+`生成画像\藤田ことね\教室` may save as
+`gdrive:生成画像/藤田ことね/教室/002.png` — it is not placed under
 `gdrive:sdxl_output`.
 
 The original image file is uploaded with `rclone copyto` without re-encoding,
-so ComfyUI generation metadata is preserved. If the target has no extension,
-the source extension is appended; a different extension is rejected. Save
-Preset and Save to GDrive are separate features: the former uses the fixed
-mode-specific preset folders above, while the latter uses the path you enter.
+so ComfyUI generation metadata is preserved. Numbering considers only direct
+files matching the source extension and a three-or-more-digit numeric name.
+Save Preset and Save to GDrive are separate features: the former uses the
+fixed mode-specific preset folders above, while the latter uses the folder you
+enter. The last folder is remembered only while the current Pod session is
+running.
 
 ## Planned Features
 

@@ -662,19 +662,21 @@ export async function savePreset(
 
 export interface GDriveSaveResult {
   ok: true;
+  targetFolder: string;
+  filename: string;
   targetPath: string;
   remote: string;
 }
 
-/** Save one existing generated output to a user-selected GDrive path. */
+/** Save one existing generated output to a user-selected GDrive folder. */
 export async function saveToGDrive(
   relativePath: string,
-  targetPath: string,
+  targetFolder: string,
 ): Promise<GDriveSaveResult> {
   const response = await fetch('/mobile/api/gdrive/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ relativePath, targetPath }),
+    body: JSON.stringify({ relativePath, targetFolder }),
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -683,6 +685,8 @@ export async function saveToGDrive(
   const result = await response.json() as Partial<GDriveSaveResult>;
   if (
     result.ok !== true
+    || typeof result.targetFolder !== 'string'
+    || typeof result.filename !== 'string'
     || typeof result.targetPath !== 'string'
     || typeof result.remote !== 'string'
   ) {

@@ -52,7 +52,7 @@ interface MediaViewerProps {
   isRejected?: (item: ViewerImage) => boolean;
   onDownload?: (item: ViewerImage) => Promise<DownloadOutcome | undefined> | void;
   onSavePreset?: (item: ViewerImage) => Promise<PresetSaveResult> | PresetSaveResult | void;
-  onSaveToGDrive?: (item: ViewerImage, targetPath: string) => Promise<GDriveSaveResult> | GDriveSaveResult | void;
+  onSaveToGDrive?: (item: ViewerImage, targetFolder: string) => Promise<GDriveSaveResult> | GDriveSaveResult | void;
   showMetadataToggle?: boolean;
   showLoadingPlaceholder?: boolean;
   // Live latent preview painted behind the placeholder's progress bar while a
@@ -224,6 +224,7 @@ export function MediaViewer({
   const [videoError, setVideoError] = useState(false);
   const [presetSaving, setPresetSaving] = useState(false);
   const [gdriveSaveItem, setGdriveSaveItem] = useState<ViewerImage | null>(null);
+  const [gdriveTargetFolder, setGdriveTargetFolder] = useState('');
   useEffect(() => {
     if (open) return;
     // OutputsPanel keeps MediaViewer mounted while its viewer is closed, so
@@ -447,11 +448,11 @@ export function MediaViewer({
     setGdriveSaveItem(currentItem);
   }, [canSaveToGDriveCurrent, currentItem, onSaveToGDrive, resetIdleTimer]);
 
-  const handleSaveToGDrive = useCallback(async (targetPath: string) => {
+  const handleSaveToGDrive = useCallback(async (targetFolder: string) => {
     if (!gdriveSaveItem || !onSaveToGDrive) {
       throw new Error(t('Google Drive save failed'));
     }
-    const result = await onSaveToGDrive(gdriveSaveItem, targetPath);
+    const result = await onSaveToGDrive(gdriveSaveItem, targetFolder);
     if (!result) throw new Error(t('Google Drive save failed'));
     setGdriveSaveItem(null);
     if (!open) return;
@@ -1775,6 +1776,8 @@ export function MediaViewer({
       )}
       {gdriveSaveItem && (
         <SaveToGDriveDialog
+          targetFolder={gdriveTargetFolder}
+          onTargetFolderChange={setGdriveTargetFolder}
           onClose={() => {
             setGdriveSaveItem(null);
             resetIdleTimer();

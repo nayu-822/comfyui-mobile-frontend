@@ -655,13 +655,13 @@ export function ImageViewer({ onClose }: ImageViewerProps) {
     );
   };
 
-  const handleSaveToGDrive = (item: ViewerImage, targetPath: string) => {
+  const handleSaveToGDrive = (item: ViewerImage, targetFolder: string) => {
     if (!item.file || item.file.type !== 'image' || resolveFileSource(item.file) !== 'output') {
       return Promise.reject(new Error('GDrive saving is available for generated output images only.'));
     }
     return saveToGDrive(
       resolveFilePath(item.file, 'output'),
-      targetPath,
+      targetFolder,
     );
   };
 

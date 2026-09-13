@@ -292,42 +292,46 @@ describe('savePreset', () => {
 });
 
 describe('saveToGDrive', () => {
-  it('POSTs the output-relative path and GDrive target path', async () => {
+  it('POSTs the output-relative path and GDrive target folder', async () => {
     const fetchMock = mockFetch({
       jsonBody: {
         ok: true,
-        targetPath: '生成画像/kotone/01.png',
-        remote: 'gdrive:生成画像/kotone/01.png',
+        targetFolder: '生成画像/kotone/classroom',
+        filename: '002.png',
+        targetPath: '生成画像/kotone/classroom/002.png',
+        remote: 'gdrive:生成画像/kotone/classroom/002.png',
       },
     });
 
-    await expect(saveToGDrive('20260913_normal/render.png', '生成画像\\kotone\\01'))
+    await expect(saveToGDrive('20260913_normal/render.png', '生成画像\\kotone\\classroom'))
       .resolves.toEqual({
         ok: true,
-        targetPath: '生成画像/kotone/01.png',
-        remote: 'gdrive:生成画像/kotone/01.png',
+        targetFolder: '生成画像/kotone/classroom',
+        filename: '002.png',
+        targetPath: '生成画像/kotone/classroom/002.png',
+        remote: 'gdrive:生成画像/kotone/classroom/002.png',
       });
     expect(fetchMock).toHaveBeenCalledWith('/mobile/api/gdrive/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         relativePath: '20260913_normal/render.png',
-        targetPath: '生成画像\\kotone\\01',
+        targetFolder: '生成画像\\kotone\\classroom',
       }),
     });
   });
 
   it('surfaces a backend error', async () => {
-    mockFetch({ ok: false, status: 409, jsonBody: { error: 'A file already exists at the destination.' } });
+    mockFetch({ ok: false, status: 502, jsonBody: { error: 'Failed to inspect destination folder.' } });
 
-    await expect(saveToGDrive('render.png', 'render.png'))
-      .rejects.toThrow('A file already exists at the destination.');
+    await expect(saveToGDrive('render.png', 'folder'))
+      .rejects.toThrow('Failed to inspect destination folder.');
   });
 
   it('rejects a malformed success response', async () => {
-    mockFetch({ jsonBody: { ok: true, targetPath: 'render.png' } });
+    mockFetch({ jsonBody: { ok: true, targetFolder: 'folder', targetPath: 'folder/000.png' } });
 
-    await expect(saveToGDrive('render.png', 'render.png'))
+    await expect(saveToGDrive('render.png', 'folder'))
       .rejects.toThrow('Invalid Google Drive save response');
   });
 });
