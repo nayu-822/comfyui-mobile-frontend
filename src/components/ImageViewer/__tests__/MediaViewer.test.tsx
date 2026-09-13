@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ViewerImage } from '@/utils/viewerImages';
 import { MediaViewer } from '@/components/ImageViewer/MediaViewer';
+import { useGDriveSaveStore } from '@/hooks/useGDriveSave';
 
 const getFileWorkflowAvailabilityMock = vi.fn();
 const getImageMetadataMock = vi.fn();
@@ -77,6 +78,7 @@ describe('MediaViewer workflow availability', () => {
     getFileWorkflowAvailabilityMock.mockResolvedValue(false);
     getImageMetadataMock.mockReset();
     getImageMetadataMock.mockResolvedValue({});
+    useGDriveSaveStore.setState({ lastTargetFolder: '' });
   });
 
   afterEach(async () => {
@@ -175,7 +177,7 @@ describe('MediaViewer workflow availability', () => {
     expect(document.body.textContent).toContain('Preset save failed: Invalid output path');
   });
 
-  it('opens Save to GDrive for a generated output and reports the saved path', async () => {
+  it('shares the Save to GDrive folder across Latest and Outputs viewer remounts', async () => {
     const onSaveToGDrive = vi.fn().mockResolvedValue({
       ok: true,
       targetFolder: '生成画像/kotone/classroom',
@@ -241,6 +243,23 @@ describe('MediaViewer workflow availability', () => {
     );
     expect(document.body.textContent).toContain('Saved to Google Drive: 生成画像/kotone/classroom/002.png');
 
+    await act(async () => {
+      root.unmount();
+      root = createRoot(container);
+      root.render(
+        <MediaViewer
+          open={true}
+          items={[makeImageItem('output/archive/render.png', 'render.png')]}
+          index={0}
+          onIndexChange={() => {}}
+          onClose={() => {}}
+          onDelete={() => {}}
+          onLoadWorkflow={() => {}}
+          onLoadInWorkflow={() => {}}
+          onSaveToGDrive={onSaveToGDrive}
+        />,
+      );
+    });
     await act(async () => {
       document.querySelector<HTMLButtonElement>(
         'button[aria-label="Save to GDrive"]',

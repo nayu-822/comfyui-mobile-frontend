@@ -73,10 +73,10 @@ def _next_filename(file_names: list[str], source_extension: str) -> str:
     """Return the next zero-padded filename for the source extension."""
 
     pattern = re.compile(
-        rf"^([0-9]{{3,}}){re.escape(source_extension)}$",
+        rf"^([0-9]{{3}}){re.escape(source_extension)}$",
         re.IGNORECASE,
     )
-    highest = -1
+    highest = 0
     for file_name in file_names:
         match = pattern.fullmatch(file_name)
         if match:

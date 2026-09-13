@@ -86,7 +86,7 @@ gdrive:sdxl_output/preset/anima/
 The image viewer also provides **Save to GDrive** for the currently displayed
 generated image from Latest or Outputs. Enter a destination folder relative to
 the Google Drive root; both backslashes and slashes are accepted as folder
-separators. The filename is assigned automatically as `000.png`, `001.png`,
+separators. The filename is assigned automatically as `001.png`, `002.png`,
 and so on based on the existing files in that folder. For example,
 `生成画像\藤田ことね\教室` may save as
 `gdrive:生成画像/藤田ことね/教室/002.png` — it is not placed under

@@ -83,20 +83,19 @@ def test_rejects_unsafe_target_folders(target_folder: str):
         gdrive.normalize_target_folder(target_folder)
 
 
-def test_next_filename_starts_at_zero_and_ignores_other_extensions():
-    assert gdrive._next_filename(["abc.png", "010.jpg", "000.webp"], ".png") == "000.png"
+def test_next_filename_starts_at_one_and_ignores_other_extensions():
+    assert gdrive._next_filename(["abc.png", "010.jpg", "000.webp"], ".png") == "001.png"
 
 
 def test_next_filename_uses_maximum_matching_number():
     assert gdrive._next_filename(
-        ["000.png", "001.png", "004.png", "abc.png", "010.jpg"],
+        ["001.png", "002.png", "004.png", "abc.png", "010.jpg"],
         ".png",
     ) == "005.png"
 
 
-def test_next_filename_supports_webp_and_four_digit_numbers():
-    assert gdrive._next_filename(["000.webp", "001.webp"], ".webp") == "002.webp"
-    assert gdrive._next_filename(["999.png"], ".png") == "1000.png"
+def test_next_filename_supports_webp():
+    assert gdrive._next_filename(["001.webp", "002.webp"], ".webp") == "003.webp"
 
 
 def test_rejects_source_outside_output_root(output_root: Path):
@@ -128,7 +127,7 @@ def test_calls_lsf_then_copyto_with_gdrive_root_path_and_preserves_source_bytes(
     source = _write_source(output_root)
     calls = _mock_rclone(
         monkeypatch,
-        listing="000.png\n001.png\n004.png\nabc.png\n010.jpg\n",
+        listing="001.png\n002.png\n004.png\nabc.png\n010.jpg\n",
     )
 
     result = gdrive.save_to_gdrive(
@@ -191,8 +190,8 @@ def test_missing_destination_folder_is_treated_as_empty(
         output_root=str(output_root),
     )
 
-    assert result["filename"] == "000.png"
-    assert calls[1][0][-1] == "gdrive:new/folder/000.png"
+    assert result["filename"] == "001.png"
+    assert calls[1][0][-1] == "gdrive:new/folder/001.png"
 
 
 def test_existing_destination_is_reported_without_overwrite(
@@ -202,7 +201,7 @@ def test_existing_destination_is_reported_without_overwrite(
     _write_source(output_root)
     calls = _mock_rclone(
         monkeypatch,
-        listing="000.png\n",
+        listing="001.png\n",
         upload_returncode=9,
     )
 

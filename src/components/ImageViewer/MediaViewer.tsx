@@ -7,6 +7,7 @@ import { useImageViewerStore } from '@/hooks/useImageViewer';
 import { useI18n } from '@/i18n';
 import { usePinnedWidgetStore } from '@/hooks/usePinnedWidget';
 import { useIsDesktop } from '@/hooks/useIsDesktop';
+import { useGDriveSaveStore } from '@/hooks/useGDriveSave';
 import type { ViewerImage } from '@/utils/viewerImages';
 import type { DownloadOutcome } from '@/utils/downloads';
 import { MediaViewerHeader } from './MediaViewer/Header';
@@ -224,7 +225,8 @@ export function MediaViewer({
   const [videoError, setVideoError] = useState(false);
   const [presetSaving, setPresetSaving] = useState(false);
   const [gdriveSaveItem, setGdriveSaveItem] = useState<ViewerImage | null>(null);
-  const [gdriveTargetFolder, setGdriveTargetFolder] = useState('');
+  const gdriveTargetFolder = useGDriveSaveStore((state) => state.lastTargetFolder);
+  const setGdriveTargetFolder = useGDriveSaveStore((state) => state.setLastTargetFolder);
   useEffect(() => {
     if (open) return;
     // OutputsPanel keeps MediaViewer mounted while its viewer is closed, so
