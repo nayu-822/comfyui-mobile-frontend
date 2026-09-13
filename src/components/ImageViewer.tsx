@@ -10,7 +10,7 @@ import { useOutputsStore } from '@/hooks/useOutputs';
 import { useOverallProgress } from '@/hooks/useOverallProgress';
 import { useHistoryWorkflowByFileId } from '@/hooks/useHistoryWorkflowByFileId';
 import { buildOutputPreferredViewerImages, buildViewerImages, getHistoryImageFileId, type ViewerImage } from '@/utils/viewerImages';
-import { deleteFile, savePreset, type FileItem } from '@/api/client';
+import { deleteFile, savePreset, saveToGDrive, type FileItem } from '@/api/client';
 import { shareOrDownloadFile } from '@/utils/downloads';
 import { Dialog } from '@/components/modals/Dialog';
 import { UseImageModal } from '@/components/modals/UseImageModal';
@@ -655,6 +655,16 @@ export function ImageViewer({ onClose }: ImageViewerProps) {
     );
   };
 
+  const handleSaveToGDrive = (item: ViewerImage, targetPath: string) => {
+    if (!item.file || item.file.type !== 'image' || resolveFileSource(item.file) !== 'output') {
+      return Promise.reject(new Error('GDrive saving is available for generated output images only.'));
+    }
+    return saveToGDrive(
+      resolveFilePath(item.file, 'output'),
+      targetPath,
+    );
+  };
+
   const handleLoadNodeClose = () => {
     setLoadNodeOpen(false);
     setLoadNodeTarget(null);
@@ -685,6 +695,7 @@ export function ImageViewer({ onClose }: ImageViewerProps) {
         isRejected={isItemRejected}
         onDownload={handleDownload}
         onSavePreset={handleSavePreset}
+        onSaveToGDrive={handleSaveToGDrive}
         showMetadataToggle
         showLoadingPlaceholder={showLoadingPlaceholder}
         loadingPreviewSrc={loadingPreviewSrc}

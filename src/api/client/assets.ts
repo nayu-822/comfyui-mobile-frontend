@@ -659,3 +659,34 @@ export async function savePreset(
   }
   return result as PresetSaveResult;
 }
+
+export interface GDriveSaveResult {
+  ok: true;
+  targetPath: string;
+  remote: string;
+}
+
+/** Save one existing generated output to a user-selected GDrive path. */
+export async function saveToGDrive(
+  relativePath: string,
+  targetPath: string,
+): Promise<GDriveSaveResult> {
+  const response = await fetch('/mobile/api/gdrive/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ relativePath, targetPath }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Google Drive save failed');
+  }
+  const result = await response.json() as Partial<GDriveSaveResult>;
+  if (
+    result.ok !== true
+    || typeof result.targetPath !== 'string'
+    || typeof result.remote !== 'string'
+  ) {
+    throw new Error('Invalid Google Drive save response');
+  }
+  return result as GDriveSaveResult;
+}

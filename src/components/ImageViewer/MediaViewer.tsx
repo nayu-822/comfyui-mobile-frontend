@@ -10,6 +10,7 @@ import { useIsDesktop } from '@/hooks/useIsDesktop';
 import type { ViewerImage } from '@/utils/viewerImages';
 import type { DownloadOutcome } from '@/utils/downloads';
 import { MediaViewerHeader } from './MediaViewer/Header';
+import { SaveToGDriveDialog } from './SaveToGDriveDialog';
 import { classifySwipe } from './swipeGesture';
 import { compareClipPath, DEFAULT_COMPARE_CLIP } from './compareClip';
 import { MediaViewerActions } from './MediaViewer/Actions';
@@ -25,6 +26,7 @@ import {
   getImageMetadata,
   getMediaThumbnailUrlFromAssetUrl,
   getPlayableVideoUrl,
+  type GDriveSaveResult,
   type PresetSaveResult,
 } from '@/api/client';
 import { resolveFilePath, resolveFileSource } from '@/utils/workflowOperations';
@@ -50,6 +52,7 @@ interface MediaViewerProps {
   isRejected?: (item: ViewerImage) => boolean;
   onDownload?: (item: ViewerImage) => Promise<DownloadOutcome | undefined> | void;
   onSavePreset?: (item: ViewerImage) => Promise<PresetSaveResult> | PresetSaveResult | void;
+  onSaveToGDrive?: (item: ViewerImage, targetPath: string) => Promise<GDriveSaveResult> | GDriveSaveResult | void;
   showMetadataToggle?: boolean;
   showLoadingPlaceholder?: boolean;
   // Live latent preview painted behind the placeholder's progress bar while a
@@ -129,6 +132,7 @@ export function MediaViewer({
   isRejected,
   onDownload,
   onSavePreset,
+  onSaveToGDrive,
   showMetadataToggle = false,
   showLoadingPlaceholder = false,
   loadingPreviewSrc = null,
@@ -219,6 +223,14 @@ export function MediaViewer({
   const [workflowAvailableById, setWorkflowAvailableById] = useState<Record<string, boolean>>({});
   const [videoError, setVideoError] = useState(false);
   const [presetSaving, setPresetSaving] = useState(false);
+  const [gdriveSaveItem, setGdriveSaveItem] = useState<ViewerImage | null>(null);
+  useEffect(() => {
+    if (open) return;
+    // OutputsPanel keeps MediaViewer mounted while its viewer is closed, so
+    // discard a dialog target instead of reopening a stale save modal later.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setGdriveSaveItem(null);
+  }, [open]);
   // Pixel resolution of the currently displayed media, shown under the filename.
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   // Full-screen image srcs that have finished decoding at least once (current
@@ -314,6 +326,12 @@ export function MediaViewer({
     && currentItem.file.type === 'image'
     && resolveFileSource(currentItem.file) === 'output'
     && onSavePreset,
+  );
+  const canSaveToGDriveCurrent = Boolean(
+    currentItem?.file
+    && currentItem.file.type === 'image'
+    && resolveFileSource(currentItem.file) === 'output'
+    && onSaveToGDrive,
   );
 
   const resetIdleTimer = useCallback(() => {
@@ -422,6 +440,27 @@ export function MediaViewer({
       setPresetSaving(false);
     }
   }, [canSavePresetCurrent, currentItem, onSavePreset, presetSaving, resetIdleTimer, showDownloadToast, t]);
+
+  const handleSaveToGDriveClick = useCallback(() => {
+    if (!currentItem || !onSaveToGDrive || !canSaveToGDriveCurrent) return;
+    resetIdleTimer();
+    setGdriveSaveItem(currentItem);
+  }, [canSaveToGDriveCurrent, currentItem, onSaveToGDrive, resetIdleTimer]);
+
+  const handleSaveToGDrive = useCallback(async (targetPath: string) => {
+    if (!gdriveSaveItem || !onSaveToGDrive) {
+      throw new Error(t('Google Drive save failed'));
+    }
+    const result = await onSaveToGDrive(gdriveSaveItem, targetPath);
+    if (!result) throw new Error(t('Google Drive save failed'));
+    setGdriveSaveItem(null);
+    if (!open) return;
+    showDownloadToast(
+      t('Saved to Google Drive: {path}', { path: result.targetPath }),
+      'success',
+      3500,
+    );
+  }, [gdriveSaveItem, onSaveToGDrive, open, showDownloadToast, t]);
 
   // Show an in-flight message right when loading begins (DownloadButton
   // signals via onLoadingChange). Only the native-iOS path saves to Photos —
@@ -1683,6 +1722,7 @@ export function MediaViewer({
               canDownload={canDownloadCurrent}
               canSavePreset={canSavePresetCurrent}
               savePresetLoading={presetSaving}
+              canSaveToGDrive={canSaveToGDriveCurrent}
               // Favorited items can't be deleted — keep the button visible but
               // disabled so the protection is discoverable.
               deleteDisabled={currentIsFavorited}
@@ -1695,6 +1735,7 @@ export function MediaViewer({
               onReject={handleRejectClick}
               onDownload={handleDownloadClick}
               onSavePreset={handleSavePresetClick}
+              onSaveToGDrive={handleSaveToGDriveClick}
               downloadFileId={fileId}
               onDownloadLoadingChange={handleDownloadLoadingChange}
               rightInset={rightControlsInset}
@@ -1731,6 +1772,15 @@ export function MediaViewer({
         >
           {downloadToast.message}
         </div>
+      )}
+      {gdriveSaveItem && (
+        <SaveToGDriveDialog
+          onClose={() => {
+            setGdriveSaveItem(null);
+            resetIdleTimer();
+          }}
+          onSave={handleSaveToGDrive}
+        />
       )}
     </div>,
     document.body

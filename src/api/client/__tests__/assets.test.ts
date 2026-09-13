@@ -5,6 +5,7 @@ import {
   loadFileState,
   moveFiles,
   savePreset,
+  saveToGDrive,
   resolveInputAliases,
   setFileState,
 } from '../assets';
@@ -287,5 +288,46 @@ describe('savePreset', () => {
     await expect(savePreset('render.png', 'sdxl')).rejects.toThrow(
       'Invalid preset save response',
     );
+  });
+});
+
+describe('saveToGDrive', () => {
+  it('POSTs the output-relative path and GDrive target path', async () => {
+    const fetchMock = mockFetch({
+      jsonBody: {
+        ok: true,
+        targetPath: '生成画像/kotone/01.png',
+        remote: 'gdrive:生成画像/kotone/01.png',
+      },
+    });
+
+    await expect(saveToGDrive('20260913_normal/render.png', '生成画像\\kotone\\01'))
+      .resolves.toEqual({
+        ok: true,
+        targetPath: '生成画像/kotone/01.png',
+        remote: 'gdrive:生成画像/kotone/01.png',
+      });
+    expect(fetchMock).toHaveBeenCalledWith('/mobile/api/gdrive/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        relativePath: '20260913_normal/render.png',
+        targetPath: '生成画像\\kotone\\01',
+      }),
+    });
+  });
+
+  it('surfaces a backend error', async () => {
+    mockFetch({ ok: false, status: 409, jsonBody: { error: 'A file already exists at the destination.' } });
+
+    await expect(saveToGDrive('render.png', 'render.png'))
+      .rejects.toThrow('A file already exists at the destination.');
+  });
+
+  it('rejects a malformed success response', async () => {
+    mockFetch({ jsonBody: { ok: true, targetPath: 'render.png' } });
+
+    await expect(saveToGDrive('render.png', 'render.png'))
+      .rejects.toThrow('Invalid Google Drive save response');
   });
 });

@@ -175,6 +175,109 @@ describe('MediaViewer workflow availability', () => {
     expect(document.body.textContent).toContain('Preset save failed: Invalid output path');
   });
 
+  it('opens Save to GDrive for a generated output and reports the saved path', async () => {
+    const onSaveToGDrive = vi.fn().mockResolvedValue({
+      ok: true,
+      targetPath: '生成画像/kotone/01.png',
+      remote: 'gdrive:生成画像/kotone/01.png',
+    });
+
+    await act(async () => {
+      root.render(
+        <MediaViewer
+          open={true}
+          items={[makeImageItem('output/renders/render.png', 'render.png')]}
+          index={0}
+          onIndexChange={() => {}}
+          onClose={() => {}}
+          onDelete={() => {}}
+          onLoadWorkflow={() => {}}
+          onLoadInWorkflow={() => {}}
+          onSaveToGDrive={onSaveToGDrive}
+        />,
+      );
+    });
+
+    const button = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Save to GDrive"]',
+    );
+    expect(button).not.toBeNull();
+
+    await act(async () => {
+      button?.click();
+    });
+
+    const input = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Google Drive destination path"]',
+    );
+    expect(input).not.toBeNull();
+    expect(document.body.textContent).toContain('Save to Google Drive');
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      setter?.call(input, '生成画像\\kotone\\01');
+      input?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const saveDialogButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find((candidate) => candidate.textContent === 'Save');
+    await act(async () => {
+      saveDialogButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(onSaveToGDrive).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filename: 'render.png',
+        file: expect.objectContaining({ id: 'output/renders/render.png' }),
+      }),
+      '生成画像\\kotone\\01',
+    );
+    expect(document.body.textContent).toContain('Saved to Google Drive: 生成画像/kotone/01.png');
+  });
+
+  it('keeps the Save to GDrive dialog open and shows backend errors', async () => {
+    const onSaveToGDrive = vi.fn().mockRejectedValue(
+      new Error('A file already exists at the destination.'),
+    );
+
+    await act(async () => {
+      root.render(
+        <MediaViewer
+          open={true}
+          items={[makeImageItem('output/render.png', 'render.png')]}
+          index={0}
+          onIndexChange={() => {}}
+          onClose={() => {}}
+          onDelete={() => {}}
+          onLoadWorkflow={() => {}}
+          onLoadInWorkflow={() => {}}
+          onSaveToGDrive={onSaveToGDrive}
+        />,
+      );
+    });
+
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(
+        'button[aria-label="Save to GDrive"]',
+      )?.click();
+    });
+    const saveDialogButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find((candidate) => candidate.textContent === 'Save');
+    await act(async () => {
+      saveDialogButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(document.querySelector('[role="alert"]')?.textContent)
+      .toContain('A file already exists at the destination.');
+    expect(document.querySelector('input[aria-label="Google Drive destination path"]'))
+      .not.toBeNull();
+  });
+
   it('shows load workflow button for video when availability endpoint reports true', async () => {
     vi.useFakeTimers();
     getFileWorkflowAvailabilityMock.mockResolvedValue(true);

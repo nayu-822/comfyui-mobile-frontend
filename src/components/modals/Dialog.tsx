@@ -24,6 +24,7 @@ interface DialogProps {
   onClose: () => void;
   title: ReactNode;
   description?: ReactNode;
+  children?: ReactNode;
   actions: DialogAction[];
   actionsLayout?: 'stack' | 'inline';
   size?: DialogSize;
@@ -52,6 +53,7 @@ export function Dialog({
   onClose,
   title,
   description,
+  children,
   actions,
   actionsLayout = 'inline',
   size = 'sm',
@@ -230,6 +232,7 @@ export function Dialog({
             {description}
           </div>
         )}
+        {children}
         <div className={`shrink-0 ${actionsLayout === 'stack' ? 'mt-4 flex flex-col gap-2' : 'mt-4 flex justify-end gap-2'}`}>
           {actions.map((action, idx) => (
             <button

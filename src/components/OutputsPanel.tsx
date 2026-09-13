@@ -27,7 +27,7 @@ import type { ViewerImage } from '@/utils/viewerImages';
 import { getMediaType } from '@/utils/media';
 import {
   deleteFile, moveFiles, MoveConflictError, type MoveFileConflict, createFolder, getUserImages,
-  getRecursiveFolders, renameFile, getScreenPreviewUrl, savePreset,
+  getRecursiveFolders, renameFile, getScreenPreviewUrl, savePreset, saveToGDrive,
 } from '@/api/client';
 import {
   FolderIcon, BookmarkIconSvg, BookmarkOutlineIcon, DownloadDeviceIcon, EyeIcon, EyeOffIcon, TrashIcon,
@@ -382,6 +382,16 @@ export const OutputsPanel = memo(function OutputsPanel({ visible }: { visible: b
     return savePreset(
       resolveFilePath(item.file, 'output'),
       currentGenerationMode,
+    );
+  };
+
+  const handleOutputsViewerSaveToGDrive = (item: ViewerImage, targetPath: string) => {
+    if (!item.file || item.file.type !== 'image' || resolveFileSource(item.file) !== 'output') {
+      return Promise.reject(new Error('GDrive saving is available for generated output images only.'));
+    }
+    return saveToGDrive(
+      resolveFilePath(item.file, 'output'),
+      targetPath,
     );
   };
 
@@ -1985,6 +1995,7 @@ export const OutputsPanel = memo(function OutputsPanel({ visible }: { visible: b
            return shareOrDownloadFile(item.src, item.filename || item.file?.name || 'image.png');
          }}
          onSavePreset={handleOutputsViewerSavePreset}
+         onSaveToGDrive={handleOutputsViewerSaveToGDrive}
          showMetadataToggle
         />
       </div>
