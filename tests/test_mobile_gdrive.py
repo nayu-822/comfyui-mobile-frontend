@@ -173,6 +173,24 @@ def test_calls_lsf_then_copyto_with_gdrive_root_path_and_preserves_source_bytes(
     assert source.read_bytes() == b"PNG bytes with ComfyUI metadata"
 
 
+def test_manual_save_remains_available_when_output_sync_is_disabled(
+    output_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _write_source(output_root)
+    monkeypatch.setenv("ENABLE_OUTPUT_SYNC", "false")
+    calls = _mock_rclone(monkeypatch)
+
+    result = gdrive.save_to_gdrive(
+        "20260913_normal/render.png",
+        "selected/folder",
+        output_root=str(output_root),
+    )
+
+    assert result["remote"] == "gdrive:selected/folder/001.png"
+    assert calls[1][0][0:2] == ["rclone", "copyto"]
+
+
 def test_missing_destination_folder_is_treated_as_empty(
     output_root: Path,
     monkeypatch: pytest.MonkeyPatch,

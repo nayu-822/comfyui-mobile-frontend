@@ -74,7 +74,7 @@ file bytes so ComfyUI workflow and prompt metadata remain intact; there is no
 preset-specific load UI because the existing **Restore parameters from image**
 action can be used after retrieving a preset manually.
 
-On RunPod, presets are stored and synchronized as:
+When RunPod automatic output sync is enabled, presets are synchronized as:
 
 ~~~text
 gdrive:sdxl_output/preset/sdxl/
@@ -98,7 +98,19 @@ files matching the source extension and a three-or-more-digit numeric name.
 Save Preset and Save to GDrive are separate features: the former uses the
 fixed mode-specific preset folders above, while the latter uses the folder you
 enter. The last folder is remembered only while the current Pod session is
-running.
+running. This explicit save remains available when RunPod's automatic output
+worker is disabled with `ENABLE_OUTPUT_SYNC=false` (the default).
+
+The RunPod bootstrap defaults to `STORAGE_MODE=ephemeral`, so a Network Volume
+is not required. Models are downloaded from Google Drive to the Container Disk
+on every fresh Pod start and are lost when the Pod stops. Set
+`STORAGE_MODE=network` only when a persistent `/workspace` volume is attached.
+User workflows, settings, push state, and uploaded inputs are restored from and
+periodically backed up to `gdrive:comfyui_state`; ordinary generated output and
+Preset files are not included. Keep selected images with **Save to Google
+Drive**.
+See [`scripts/runpod/README.md`](scripts/runpod/README.md) for the storage layout
+and cold-start timing logs.
 
 ## Planned Features
 

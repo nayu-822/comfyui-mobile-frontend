@@ -6,17 +6,34 @@ The RunPod Template clones this repository into
 `/workspace/runpod-slim/ComfyUI` directory hierarchy intact and expects the
 official image to provide the baked application at `/opt/comfyui-baked`.
 
-`/workspace` is the Network Volume. Only persistent data belongs there. New
-generated images and ComfyUI temporary files are placed on the Container Disk
-under `/runpod-local`.
+The default `STORAGE_MODE=ephemeral` does not require a Network Volume.
+`/workspace` is then an ordinary directory on the Container Disk and is rebuilt
+from the baked image, Git, and Google Drive every time the Pod starts. Generated
+images and ComfyUI temporary files are also placed on the Container Disk under
+`/runpod-local`.
+
+Set `STORAGE_MODE=network` only for the legacy persistent-cache layout. That
+mode requires a mounted volume at `/workspace` and keeps the downloaded model
+cache and ComfyUI runtime between Pod starts.
+
+To preserve application behavior in ephemeral mode, bootstrap restores the
+following from `gdrive:comfyui_state` before ComfyUI starts, then backs it up
+every 30 seconds with non-destructive `rclone copy` operations:
+
+- `ComfyUI/user` — workflows, ComfyUI settings, mobile preferences and file
+  state, plus web/app push keys, subscriptions and pairing state.
+- `ComfyUI/input` — uploaded workflow input files and their aliases.
+
+Ordinary generated output and `output/preset` are deliberately excluded. Use
+the mobile viewer's **Save to Google Drive** action for images worth keeping.
 
 ## Storage layout
 
 ~~~text
-Network Volume: /workspace
+Container Disk: /workspace (`STORAGE_MODE=ephemeral`, default)
 ├── models/
 │   └── checkpoints/
-│       └── <relative model path>          # one persistent copy per model
+│       └── <relative model path>          # downloaded again after Pod stop
 └── runpod-slim/
     └── ComfyUI/
         ├── custom_nodes/
@@ -34,7 +51,7 @@ Container Disk: /runpod-local
 
 `/workspace/runpod-slim` is always a normal directory. Bootstrap never removes
 it and never replaces it with a symlink; this preserves compatibility with
-RunPod's official `/start.sh`.
+RunPod's official `/start.sh`. In ephemeral mode its contents are disposable.
 
 ## Canonical workflow
 
@@ -67,6 +84,8 @@ the appropriate file under `src/workflows/` and commit it to Git.
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+export BOOTSTRAP_STARTED_AT_EPOCH="$(date +%s)"
+
 REPO="https://github.com/nayu-822/comfyui-mobile-frontend.git"
 REF="${MOBILE_FRONTEND_REF:-feature/simple-generation-ui}"
 BOOT_DIR="/workspace/comfyui-mobile-frontend-src"
@@ -90,7 +109,7 @@ at `/workspace/comfyui-mobile-frontend-src`; it does not remove
 
 The Checkpoint field is shared by the SDXL and Anima screens. There is no
 required SDXL/Anima classification in Google Drive: all files under
-`gdrive:sdxl_model` are downloaded once into the Network Volume cache and are
+`gdrive:sdxl_model` are downloaded once into the selected storage cache and are
 then exposed through both ComfyUI `models/checkpoints` and
 `models/diffusion_models` as symlinks.
 
@@ -120,7 +139,7 @@ startup warnings, but do not prevent a Pod that can still run SDXL.
 Bootstrap first obtains a recursive manifest for `*.safetensors` and `*.ckpt`.
 For every GDrive-relative file path:
 
-1. The persistent cache path is
+1. The cache path is
    `/workspace/models/checkpoints/<relative path>`.
 2. A same-name cache is reused when its file size matches the GDrive manifest.
 3. New or changed files are downloaded to `.part`, size-checked, and moved
@@ -134,20 +153,21 @@ For every GDrive-relative file path:
    manifest. Old cache files are not automatically deleted.
 
 The second ComfyUI link never downloads or copies the model again. Both loader
-folders therefore consume the same Network Volume file, which keeps large
-Anima and SDXL model files from consuming duplicate storage.
+folders therefore consume the same cache file, which keeps large Anima and
+SDXL model files from consuming duplicate storage.
 
-If `/workspace` is not mounted as a Network Volume, bootstrap stops instead of
-copying Checkpoints to Container Disk. Legacy regular Checkpoint files found
-under ComfyUI are moved into the persistent Checkpoint area when possible;
-unmanaged leftovers are preserved in a timestamped migration backup.
+With the default `STORAGE_MODE=ephemeral`, `/workspace` does not need to be a
+mountpoint and all Checkpoints are downloaded to Container Disk at startup.
+With `STORAGE_MODE=network`, bootstrap stops unless `/workspace` is a mounted
+volume. Legacy regular Checkpoint files found under ComfyUI are moved into the
+shared Checkpoint cache when possible; unmanaged leftovers are preserved in a
+timestamped migration backup.
 
 ## Other model files
 
 Text Encoder, VAE, LoRA, Upscaler, and Detailer files are copied from GDrive
-using their extension filters. They are persistent model files under the
-ComfyUI tree on `/workspace`; only output and temp are redirected to the
-Container Disk.
+using their extension filters. They live under the ComfyUI tree on `/workspace`.
+They are disposable in ephemeral mode and persistent only in network mode.
 
 | GDrive path | ComfyUI destination | Extensions |
 | --- | --- | --- |
@@ -172,10 +192,35 @@ files already on Container Disk, then moved to a timestamped migration backup;
 they are never unconditionally deleted. Existing output is also copied to
 Google Drive before migration when output sync is enabled.
 
-`sync_outputs.sh` performs one-way recursive `rclone copy` from the physical
-`/runpod-local/output` directory to `gdrive:sdxl_output`. It never copies old
-GDrive images back to the Pod and preserves subdirectories such as
+Automatic output sync is disabled by default. Set `ENABLE_OUTPUT_SYNC=true` to
+start `sync_outputs.sh`, which performs a one-way recursive `rclone copy` from
+the physical `/runpod-local/output` directory to `gdrive:sdxl_output`. It never
+copies old GDrive images back to the Pod and preserves subdirectories such as
 `YYYYMMDD_normal/`, `YYYYMMDD_upscale/`, and `preset/sdxl/` or `preset/anima/`.
+
+The manual **Save to Google Drive** action is independent of this worker. It
+continues to upload the selected image to the explicitly entered GDrive folder
+when `ENABLE_OUTPUT_SYNC=false`.
+
+### User state and inputs
+
+`ENABLE_STATE_SYNC=true` is independent from output sync and is enabled by
+default. Startup restores `gdrive:comfyui_state/user` and
+`gdrive:comfyui_state/input` before the Git-managed canonical workflows are
+registered. The canonical SDXL and Anima files therefore still come from Git,
+while additional user workflows and settings are restored from Google Drive.
+
+During the session, `sync_state.sh` copies newer user-data and input files back
+to Google Drive every `STATE_SYNC_INTERVAL_SECONDS` (30 seconds by default).
+It uses `rclone copy`, not `rclone sync`, so an empty or partially initialized
+Pod cannot delete the backup. Consequently, deleting a workflow or input does
+not delete the older Google Drive copy; it can reappear at the next cold start.
+
+Before detaching an existing Network Volume, start the updated bootstrap once
+with `STORAGE_MODE=network`, wait for at least one successful state-backup cycle
+in `/tmp/comfyui-mobile-state-sync.log`, and only then launch an ephemeral Pod.
+This seeds `gdrive:comfyui_state` with the workflows, settings, push state, and
+inputs currently stored on the volume.
 
 ## ComfyUI Python and custom nodes
 
@@ -243,8 +288,10 @@ Required secret:
 
 Storage:
 
+- `STORAGE_MODE` (default: `ephemeral`; use `network` to require persistent `/workspace`)
 - `COMFYUI_DIR` (default: `/workspace/runpod-slim/ComfyUI`)
-- `NETWORK_CHECKPOINT_DIR` (default: `/workspace/models/checkpoints`)
+- `MODEL_CACHE_DIR` (default: `/workspace/models/checkpoints`)
+- `NETWORK_CHECKPOINT_DIR` (legacy alias for `MODEL_CACHE_DIR`)
 - `CHECKPOINT_DIR` (default: `${COMFYUI_DIR}/models/checkpoints`)
 - `DIFFUSION_MODEL_DIR` (default: `${COMFYUI_DIR}/models/diffusion_models`)
 - `TEXT_ENCODER_DIR` (default: `${COMFYUI_DIR}/models/text_encoders`)
@@ -252,6 +299,8 @@ Storage:
 - `LOCAL_EPHEMERAL_ROOT` (default: `/runpod-local`)
 - `LOCAL_OUTPUT_DIR` (default: `/runpod-local/output`)
 - `LOCAL_TEMP_DIR` (default: `/runpod-local/temp`)
+- `INPUT_DIR` (default: `${COMFYUI_DIR}/input`)
+- `USER_DATA_DIR` (default: `${COMFYUI_DIR}/user`)
 
 GDrive and output worker:
 
@@ -263,9 +312,14 @@ GDrive and output worker:
 - `GDRIVE_UPSCALER_PATH` (default: `sdxl_upscaler`)
 - `GDRIVE_DETAILER_PATH` (default: `sdxl_detailer`)
 - `GDRIVE_OUTPUT_PATH` (default: `sdxl_output`)
-- `ENABLE_OUTPUT_SYNC` (default: `true`)
+- `ENABLE_OUTPUT_SYNC` (default: `false`; set to `true`, `1`, `yes`, or `on` to enable automatic output sync)
 - `OUTPUT_SYNC_INTERVAL_SECONDS` (default: `60`)
 - `OUTPUT_MIN_AGE` (default: `15s`)
+- `GDRIVE_STATE_PATH` (default: `comfyui_state`)
+- `ENABLE_STATE_SYNC` (default: `true`)
+- `SYNC_INPUTS` (default: `true`)
+- `STATE_SYNC_INTERVAL_SECONDS` (default: `30`)
+- `STATE_SYNC_LOG` (default: `/tmp/comfyui-mobile-state-sync.log`)
 
 Other controls:
 
@@ -302,12 +356,30 @@ rclone:
 bash scripts/runpod/bootstrap_static_test.sh
 ~~~
 
+## Measuring cold-start time
+
+Bootstrap logs every major step as `step finished: ... (Ns)`. Immediately
+before `/start.sh` it prints the total bootstrap setup time. The background
+health check then prints the end-to-end time when ComfyUI, the mobile route,
+both canonical workflows, and the required Impact nodes are ready:
+
+~~~text
+[runpod] ComfyUI startup ready in 412s from bootstrap start
+~~~
+
+The same readiness result is saved to
+`/tmp/comfyui-mobile-health-check.log`. Exporting
+`BOOTSTRAP_STARTED_AT_EPOCH` before the initial Git clone, as in the template
+snippet above, includes clone time in the total.
+
 ## Storage verification commands
 
-After bootstrap, these commands verify the intended physical layout:
+After an ephemeral bootstrap, these commands verify the intended physical
+layout:
 
 ~~~bash
-mountpoint /workspace
+test -d /workspace
+test "${STORAGE_MODE:-ephemeral}" = ephemeral
 test -d /workspace/models/checkpoints
 test -d /workspace/runpod-slim
 test "$(readlink -f /workspace/runpod-slim/ComfyUI/output)" = /runpod-local/output

@@ -4,6 +4,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BOOTSTRAP="$SCRIPT_DIR/bootstrap.sh"
 SYNC="$SCRIPT_DIR/sync_outputs.sh"
+STATE_SYNC="$SCRIPT_DIR/sync_state.sh"
 
 assert_contains() {
   local file="$1"
@@ -39,11 +40,22 @@ assert_order() {
 
 bash -n "$BOOTSTRAP"
 bash -n "$SYNC"
+bash -n "$STATE_SYNC"
 
 assert_contains "$BOOTSTRAP" 'checkpoint_manifest'
 assert_contains "$BOOTSTRAP" 'rclone copyto "$remote_path" "$temp_path"'
 assert_contains "$BOOTSTRAP" 'mv -f "$temp_path" "$cache_path"'
 assert_contains "$BOOTSTRAP" 'NETWORK_CHECKPOINT_DIR'
+assert_contains "$BOOTSTRAP" 'STORAGE_MODE="${STORAGE_MODE:-ephemeral}"'
+assert_contains "$BOOTSTRAP" 'MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-${NETWORK_CHECKPOINT_DIR:-${WORKSPACE_DIR}/models/checkpoints}}"'
+assert_contains "$BOOTSTRAP" 'STORAGE_MODE=network requires a mounted volume'
+assert_contains "$BOOTSTRAP" 'storage mode: ephemeral'
+assert_contains "$BOOTSTRAP" 'run_timed_step "download checkpoints" sync_gdrive_checkpoints'
+assert_contains "$BOOTSTRAP" 'ComfyUI startup ready in'
+assert_contains "$BOOTSTRAP" 'GDRIVE_STATE_PATH="${GDRIVE_STATE_PATH:-comfyui_state}"'
+assert_contains "$BOOTSTRAP" 'restore_gdrive_state()'
+assert_contains "$BOOTSTRAP" 'start_state_sync()'
+assert_contains "$BOOTSTRAP" 'run_timed_step "restore user data and inputs" restore_gdrive_state'
 assert_contains "$BOOTSTRAP" 'GDRIVE_TEXT_ENCODER_PATH="${GDRIVE_TEXT_ENCODER_PATH:-anima_text_encoder}"'
 assert_contains "$BOOTSTRAP" 'GDRIVE_VAE_PATH="${GDRIVE_VAE_PATH:-anima_vae}"'
 assert_contains "$BOOTSTRAP" 'DIFFUSION_MODEL_DIR="${DIFFUSION_MODEL_DIR:-${COMFYUI_DIR}/models/diffusion_models}"'
@@ -66,6 +78,7 @@ assert_contains "$BOOTSTRAP" 'migrate_storage_directory'
 assert_contains "$BOOTSTRAP" 'sync_legacy_output'
 assert_contains "$BOOTSTRAP" 'cp -a "$BAKED_COMFYUI_DIR"/. "$COMFYUI_DIR"/'
 assert_contains "$BOOTSTRAP" 'GDRIVE_OUTPUT_PATH="${GDRIVE_OUTPUT_PATH:-sdxl_output}"'
+assert_contains "$BOOTSTRAP" 'ENABLE_OUTPUT_SYNC="${ENABLE_OUTPUT_SYNC:-false}"'
 assert_contains "$BOOTSTRAP" 'RCLONE_CONFIG_B64'
 assert_contains "$BOOTSTRAP" 'python3.12'
 assert_contains "$BOOTSTRAP" 'python3)'
@@ -131,12 +144,20 @@ assert_not_contains "$BOOTSTRAP" 'rm -rf "$COMFYUI_DIR"'
 assert_not_contains "$BOOTSTRAP" 'rm -rf "$RUNPOD_SLIM_DIR"'
 
 assert_contains "$SYNC" 'rclone "${args[@]}"'
+assert_contains "$SYNC" 'ENABLE_OUTPUT_SYNC="${ENABLE_OUTPUT_SYNC:-false}"'
 assert_contains "$SYNC" 'copy --create-empty-src-dirs'
 assert_contains "$SYNC" 'args+=("$LOCAL_OUTPUT_DIR/" "$REMOTE_PATH")'
 assert_not_contains "$SYNC" '--exclude'
 assert_contains "$SYNC" 'LOCAL_OUTPUT_DIR must stay under LOCAL_EPHEMERAL_ROOT'
 assert_not_contains "$SYNC" 'rclone sync'
 assert_not_contains "$SYNC" 'copy "${RCLONE_REMOTE_NAME}:$GDRIVE_OUTPUT_PATH"'
+
+assert_contains "$STATE_SYNC" 'rclone copy --update --create-empty-src-dirs'
+assert_contains "$STATE_SYNC" 'USER_REMOTE="${RCLONE_REMOTE_NAME}:${GDRIVE_STATE_PATH}/user"'
+assert_contains "$STATE_SYNC" 'INPUT_REMOTE="${RCLONE_REMOTE_NAME}:${GDRIVE_STATE_PATH}/input"'
+assert_not_contains "$STATE_SYNC" 'rclone sync'
+assert_not_contains "$STATE_SYNC" 'GDRIVE_OUTPUT_PATH'
+assert_not_contains "$STATE_SYNC" 'LOCAL_OUTPUT_DIR'
 
 assert_order "$BOOTSTRAP" 'prepare_comfyui' 'configure_runtime_pip_constraints'
 assert_order "$BOOTSTRAP" 'configure_runtime_pip_constraints' 'ensure_comfyui_runtime_venv'
@@ -145,6 +166,8 @@ assert_order "$BOOTSTRAP" 'resolve_comfyui_python' 'ensure_comfy_kitchen_for_ani
 assert_order "$BOOTSTRAP" 'ensure_comfyui_manager' 'ensure_comfy_kitchen_for_anima'
 assert_order "$BOOTSTRAP" 'sync_gdrive_checkpoints' 'copy_gdrive_local_models'
 assert_order "$BOOTSTRAP" 'copy_gdrive_local_models' 'verify_anima_model_files'
+assert_order "$BOOTSTRAP" 'prepare_comfyui' 'restore_gdrive_state'
+assert_order "$BOOTSTRAP" 'restore_gdrive_state' 'register_canonical_workflow'
 
 behavior_tmp="$(mktemp -d)"
 trap 'rm -rf -- "$behavior_tmp"' EXIT
@@ -162,10 +185,59 @@ printf '%s\n' '# test custom node' > "$MOBILE_FRONTEND_SRC/__init__.py"
 printf '%s\n' '<html></html>' > "$MOBILE_FRONTEND_SRC/dist/index.html"
 source "$BOOTSTRAP"
 
+# Git Bash on Windows does not ship util-linux mountpoint. Stub the one
+# behavior this portable test needs: the temporary workspace is not mounted.
+mountpoint() { return 1; }
+validate_runpod_storage_layout
+[[ "$STORAGE_MODE" == "ephemeral" && -d "$WORKSPACE_DIR" ]] || {
+  echo "storage behavior test failed: default ephemeral workspace was not accepted" >&2
+  exit 1
+}
+if (STORAGE_MODE=network validate_runpod_storage_layout >/dev/null 2>&1); then
+  echo "storage behavior test failed: network mode accepted a non-mounted workspace" >&2
+  exit 1
+fi
+
+state_sync_tmp="$behavior_tmp/state-sync"
+state_sync_bin="$state_sync_tmp/bin"
+state_sync_calls="$state_sync_tmp/rclone-calls.txt"
+mkdir -p "$state_sync_bin" "$state_sync_tmp/user" "$state_sync_tmp/input"
+printf '%s\n' config > "$state_sync_tmp/rclone.conf"
+printf '%s\n' workflow > "$state_sync_tmp/user/workflow.json"
+printf '%s\n' input > "$state_sync_tmp/input/input.png"
+cat > "$state_sync_bin/rclone" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$STATE_SYNC_TEST_CALLS"
+EOF
+chmod +x "$state_sync_bin/rclone"
+PATH="$state_sync_bin:$PATH" \
+STATE_SYNC_TEST_CALLS="$state_sync_calls" \
+RCLONE_CONFIG="$state_sync_tmp/rclone.conf" \
+USER_DATA_DIR="$state_sync_tmp/user" \
+INPUT_DIR="$state_sync_tmp/input" \
+GDRIVE_STATE_PATH="comfyui_state" \
+ENABLE_STATE_SYNC=true \
+SYNC_INPUTS=true \
+SYNC_ONCE=true \
+bash "$STATE_SYNC"
+grep -Fq 'comfyui_state/user' "$state_sync_calls" || {
+  echo "state sync behavior test failed: user data was not backed up" >&2
+  exit 1
+}
+grep -Fq 'comfyui_state/input' "$state_sync_calls" || {
+  echo "state sync behavior test failed: inputs were not backed up" >&2
+  exit 1
+}
+if grep -Eq '(^| )sync( |$)|output|preset' "$state_sync_calls"; then
+  echo "state sync behavior test failed: destructive sync or output backup was attempted" >&2
+  exit 1
+fi
+
 workflow_source_dir="$behavior_tmp/workflows"
 mkdir -p "$workflow_source_dir"
 printf '%s\n' '{"workflow":"sdxl"}' > "$workflow_source_dir/mobile_sdxl_default.json"
 printf '%s\n' '{"workflow":"anima"}' > "$workflow_source_dir/mobile_anima_default.json"
+COMFYUI_WORKFLOW_DIR="$behavior_tmp/registered"
 CANONICAL_WORKFLOW_SRC="$workflow_source_dir/mobile_sdxl_default.json"
 COMFYUI_CANONICAL_WORKFLOW="$behavior_tmp/registered/mobile_sdxl_default.json"
 ANIMA_WORKFLOW_SRC="$workflow_source_dir/mobile_anima_default.json"
@@ -289,6 +361,7 @@ fi
 
 model_behavior_tmp="$behavior_tmp/model-layout"
 NETWORK_CHECKPOINT_DIR="$model_behavior_tmp/workspace/models/checkpoints"
+MODEL_CACHE_DIR="$NETWORK_CHECKPOINT_DIR"
 CHECKPOINT_DIR="$model_behavior_tmp/runpod-slim/ComfyUI/models/checkpoints"
 DIFFUSION_MODEL_DIR="$model_behavior_tmp/runpod-slim/ComfyUI/models/diffusion_models"
 TEXT_ENCODER_DIR="$model_behavior_tmp/runpod-slim/ComfyUI/models/text_encoders"
@@ -347,36 +420,44 @@ rclone() {
 }
 
 sync_gdrive_checkpoints
-sync_gdrive_checkpoints
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) model_symlink_checks=false ;;
+  *) model_symlink_checks=true ;;
+esac
+if [[ "$model_symlink_checks" == true ]]; then
+  sync_gdrive_checkpoints
+fi
 [[ -f "$NETWORK_CHECKPOINT_DIR/$ANIMA_MODEL_FILENAME" ]] || {
   echo "model behavior test failed: checkpoint cache file was not downloaded" >&2
   exit 1
 }
-[[ -L "$CHECKPOINT_DIR/$ANIMA_MODEL_FILENAME" && \
-  -L "$DIFFUSION_MODEL_DIR/$ANIMA_MODEL_FILENAME" ]] || {
-  echo "model behavior test failed: both ComfyUI model links were not created" >&2
-  exit 1
-}
-[[ "$(readlink -f "$CHECKPOINT_DIR/$ANIMA_MODEL_FILENAME")" == \
-  "$(readlink -f "$NETWORK_CHECKPOINT_DIR/$ANIMA_MODEL_FILENAME")" ]] || {
-  echo "model behavior test failed: checkpoint link does not target the shared cache" >&2
-  exit 1
-}
-[[ "$(readlink -f "$DIFFUSION_MODEL_DIR/$ANIMA_MODEL_FILENAME")" == \
-  "$(readlink -f "$NETWORK_CHECKPOINT_DIR/$ANIMA_MODEL_FILENAME")" ]] || {
-  echo "model behavior test failed: diffusion model link does not target the shared cache" >&2
-  exit 1
-}
-[[ -L "$CHECKPOINT_DIR/$SDXL_MODEL_FILENAME" && \
-  -L "$DIFFUSION_MODEL_DIR/$SDXL_MODEL_FILENAME" ]] || {
-  echo "model behavior test failed: existing SDXL checkpoint links were not created" >&2
-  exit 1
-}
-[[ ! -e "$CHECKPOINT_DIR/stale.safetensors" && \
-  ! -e "$DIFFUSION_MODEL_DIR/stale.safetensors" ]] || {
-  echo "model behavior test failed: stale model links were not removed" >&2
-  exit 1
-}
+if [[ "$model_symlink_checks" == true ]]; then
+  [[ -L "$CHECKPOINT_DIR/$ANIMA_MODEL_FILENAME" && \
+    -L "$DIFFUSION_MODEL_DIR/$ANIMA_MODEL_FILENAME" ]] || {
+    echo "model behavior test failed: both ComfyUI model links were not created" >&2
+    exit 1
+  }
+  [[ "$(readlink -f "$CHECKPOINT_DIR/$ANIMA_MODEL_FILENAME")" == \
+    "$(readlink -f "$NETWORK_CHECKPOINT_DIR/$ANIMA_MODEL_FILENAME")" ]] || {
+    echo "model behavior test failed: checkpoint link does not target the shared cache" >&2
+    exit 1
+  }
+  [[ "$(readlink -f "$DIFFUSION_MODEL_DIR/$ANIMA_MODEL_FILENAME")" == \
+    "$(readlink -f "$NETWORK_CHECKPOINT_DIR/$ANIMA_MODEL_FILENAME")" ]] || {
+    echo "model behavior test failed: diffusion model link does not target the shared cache" >&2
+    exit 1
+  }
+  [[ -L "$CHECKPOINT_DIR/$SDXL_MODEL_FILENAME" && \
+    -L "$DIFFUSION_MODEL_DIR/$SDXL_MODEL_FILENAME" ]] || {
+    echo "model behavior test failed: existing SDXL checkpoint links were not created" >&2
+    exit 1
+  }
+  [[ ! -e "$CHECKPOINT_DIR/stale.safetensors" && \
+    ! -e "$DIFFUSION_MODEL_DIR/stale.safetensors" ]] || {
+    echo "model behavior test failed: stale model links were not removed" >&2
+    exit 1
+  }
+fi
 cache_file_count="$(find "$NETWORK_CHECKPOINT_DIR" -type f -name "$ANIMA_MODEL_FILENAME" | wc -l | tr -d '[:space:]')"
 [[ "$cache_file_count" == "1" ]] || {
   echo "model behavior test failed: checkpoint model was copied more than once" >&2

@@ -5,6 +5,8 @@ WORKSPACE_DIR="${WORKSPACE_DIR:-/workspace}"
 RUNPOD_SLIM_DIR="${RUNPOD_SLIM_DIR:-${WORKSPACE_DIR}/runpod-slim}"
 COMFYUI_DIR="${COMFYUI_DIR:-${RUNPOD_SLIM_DIR}/ComfyUI}"
 BAKED_COMFYUI_DIR="${BAKED_COMFYUI_DIR:-/opt/comfyui-baked}"
+STORAGE_MODE="${STORAGE_MODE:-ephemeral}"
+BOOTSTRAP_STARTED_AT_EPOCH="${BOOTSTRAP_STARTED_AT_EPOCH:-$(date +%s)}"
 
 MOBILE_FRONTEND_SRC="${MOBILE_FRONTEND_SRC:-${WORKSPACE_DIR}/comfyui-mobile-frontend-src}"
 MOBILE_CUSTOM_NODE_DIR="${MOBILE_CUSTOM_NODE_DIR:-${COMFYUI_DIR}/custom_nodes/comfyui-mobile-frontend}"
@@ -24,19 +26,28 @@ GDRIVE_LORA_PATH="${GDRIVE_LORA_PATH:-sdxl_lora}"
 GDRIVE_UPSCALER_PATH="${GDRIVE_UPSCALER_PATH:-sdxl_upscaler}"
 GDRIVE_DETAILER_PATH="${GDRIVE_DETAILER_PATH:-sdxl_detailer}"
 GDRIVE_OUTPUT_PATH="${GDRIVE_OUTPUT_PATH:-sdxl_output}"
+GDRIVE_STATE_PATH="${GDRIVE_STATE_PATH:-comfyui_state}"
 
-NETWORK_CHECKPOINT_DIR="${NETWORK_CHECKPOINT_DIR:-${WORKSPACE_DIR}/models/checkpoints}"
+MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-${NETWORK_CHECKPOINT_DIR:-${WORKSPACE_DIR}/models/checkpoints}}"
+# Backward-compatible alias for existing RunPod templates.
+NETWORK_CHECKPOINT_DIR="$MODEL_CACHE_DIR"
 LOCAL_EPHEMERAL_ROOT="${LOCAL_EPHEMERAL_ROOT:-/runpod-local}"
 LOCAL_OUTPUT_DIR="${LOCAL_OUTPUT_DIR:-${COMFYUI_OUTPUT_DIR:-${LOCAL_EPHEMERAL_ROOT}/output}}"
 LOCAL_TEMP_DIR="${LOCAL_TEMP_DIR:-${LOCAL_EPHEMERAL_ROOT}/temp}"
+INPUT_DIR="${INPUT_DIR:-${COMFYUI_DIR}/input}"
+USER_DATA_DIR="${USER_DATA_DIR:-${COMFYUI_DIR}/user}"
 
 START_SCRIPT="${START_SCRIPT:-/start.sh}"
 COMFYUI_ARGS_FILE="${COMFYUI_ARGS_FILE:-${RUNPOD_SLIM_DIR}/comfyui_args.txt}"
 RUNTIME_PIP_CONSTRAINT_FILE="${RUNTIME_PIP_CONSTRAINT_FILE:-/opt/comfyui-runtime-constraints.txt}"
 OUTPUT_SYNC_LOG="${OUTPUT_SYNC_LOG:-/tmp/comfyui-mobile-output-sync.log}"
-ENABLE_OUTPUT_SYNC="${ENABLE_OUTPUT_SYNC:-true}"
+ENABLE_OUTPUT_SYNC="${ENABLE_OUTPUT_SYNC:-false}"
 OUTPUT_SYNC_INTERVAL_SECONDS="${OUTPUT_SYNC_INTERVAL_SECONDS:-60}"
 OUTPUT_MIN_AGE="${OUTPUT_MIN_AGE:-15s}"
+STATE_SYNC_LOG="${STATE_SYNC_LOG:-/tmp/comfyui-mobile-state-sync.log}"
+ENABLE_STATE_SYNC="${ENABLE_STATE_SYNC:-true}"
+SYNC_INPUTS="${SYNC_INPUTS:-true}"
+STATE_SYNC_INTERVAL_SECONDS="${STATE_SYNC_INTERVAL_SECONDS:-30}"
 
 ENABLE_COMFYUI_MANAGER="${ENABLE_COMFYUI_MANAGER:-true}"
 COMFYUI_MANAGER_PACKAGE="${COMFYUI_MANAGER_PACKAGE:-comfyui-manager}"
@@ -67,6 +78,17 @@ ANIMA_VAE_FILENAME="qwen_image_vae.safetensors"
 COMFYUI_PYTHON=""
 
 log() { echo "[runpod] $*"; }
+
+run_timed_step() {
+  local label="$1"
+  shift
+  local started_at finished_at
+  started_at="$(date +%s)"
+  log "step started: $label"
+  "$@"
+  finished_at="$(date +%s)"
+  log "step finished: $label ($((finished_at - started_at))s)"
+}
 
 is_enabled() {
   case "${1,,}" in
@@ -101,9 +123,33 @@ validate_runpod_storage_layout() {
     exit 1
   }
   command -v mountpoint >/dev/null 2>&1 || {
-    log "mountpoint is required to verify the /workspace Network Volume"
+    log "mountpoint is required for storage mode validation"
     exit 1
   }
+
+  STORAGE_MODE="${STORAGE_MODE,,}"
+  case "$STORAGE_MODE" in
+    ephemeral)
+      [[ ! -e "$WORKSPACE_DIR" || -d "$WORKSPACE_DIR" ]] || {
+        log "ephemeral workspace path exists but is not a directory: $WORKSPACE_DIR"
+        exit 1
+      }
+      mkdir -p "$WORKSPACE_DIR"
+      log "storage mode: ephemeral (all files under $WORKSPACE_DIR are disposable)"
+      ;;
+    network)
+      [[ -d "$WORKSPACE_DIR" ]] && mountpoint -q "$WORKSPACE_DIR" || {
+        log "STORAGE_MODE=network requires a mounted volume at $WORKSPACE_DIR"
+        exit 1
+      }
+      log "storage mode: network (data under $WORKSPACE_DIR persists)"
+      ;;
+    *)
+      log "STORAGE_MODE must be either ephemeral or network: $STORAGE_MODE"
+      exit 1
+      ;;
+  esac
+  export STORAGE_MODE
 
   local configured_workspace_dir="$WORKSPACE_DIR"
   local configured_runpod_slim_dir="$RUNPOD_SLIM_DIR"
@@ -112,7 +158,7 @@ validate_runpod_storage_layout() {
   local configured_model_dir
   local configured_local_root="$LOCAL_EPHEMERAL_ROOT"
   [[ ! -L "$configured_workspace_dir" ]] || {
-    log "$configured_workspace_dir must be a real Network Volume mount path"
+    log "$configured_workspace_dir must be a real directory"
     exit 1
   }
   [[ ! -L "$configured_runpod_slim_dir" ]] || {
@@ -146,6 +192,7 @@ validate_runpod_storage_layout() {
   RUNPOD_SLIM_DIR="$(resolve_path "$RUNPOD_SLIM_DIR")"
   COMFYUI_DIR="$(resolve_path "$COMFYUI_DIR")"
   NETWORK_CHECKPOINT_DIR="$(resolve_path "$NETWORK_CHECKPOINT_DIR")"
+  MODEL_CACHE_DIR="$NETWORK_CHECKPOINT_DIR"
   CHECKPOINT_DIR="$(resolve_path "$CHECKPOINT_DIR")"
   DIFFUSION_MODEL_DIR="$(resolve_path "$DIFFUSION_MODEL_DIR")"
   TEXT_ENCODER_DIR="$(resolve_path "$TEXT_ENCODER_DIR")"
@@ -153,13 +200,15 @@ validate_runpod_storage_layout() {
   LOCAL_EPHEMERAL_ROOT="$(resolve_path "$LOCAL_EPHEMERAL_ROOT")"
   LOCAL_OUTPUT_DIR="$(resolve_path "$LOCAL_OUTPUT_DIR")"
   LOCAL_TEMP_DIR="$(resolve_path "$LOCAL_TEMP_DIR")"
+  INPUT_DIR="$(resolve_path "$INPUT_DIR")"
+  USER_DATA_DIR="$(resolve_path "$USER_DATA_DIR")"
 
   [[ "$WORKSPACE_DIR" = /* ]] || {
     log "WORKSPACE_DIR must be an absolute path: $WORKSPACE_DIR"
     exit 1
   }
-  [[ -d "$WORKSPACE_DIR" ]] && mountpoint -q "$WORKSPACE_DIR" || {
-    log "Network Volume is not mounted at $WORKSPACE_DIR"
+  [[ -d "$WORKSPACE_DIR" ]] || {
+    log "workspace directory is unavailable: $WORKSPACE_DIR"
     exit 1
   }
 
@@ -205,6 +254,7 @@ validate_runpod_storage_layout() {
   assert_not_workspace_path "LOCAL_TEMP_DIR" "$LOCAL_TEMP_DIR"
   assert_not_workspace_path "RCLONE_CONFIG" "$RCLONE_CONFIG"
   assert_not_workspace_path "OUTPUT_SYNC_LOG" "$OUTPUT_SYNC_LOG"
+  assert_not_workspace_path "STATE_SYNC_LOG" "$STATE_SYNC_LOG"
   assert_not_workspace_path "START_SCRIPT" "$START_SCRIPT"
   assert_not_workspace_path "BAKED_COMFYUI_DIR" "$BAKED_COMFYUI_DIR"
 
@@ -216,10 +266,19 @@ validate_runpod_storage_layout() {
     log "LOCAL_TEMP_DIR must stay under LOCAL_EPHEMERAL_ROOT: $LOCAL_TEMP_DIR"
     exit 1
   }
+  path_is_within "$INPUT_DIR" "$COMFYUI_DIR" || {
+    log "INPUT_DIR must stay under COMFYUI_DIR: $INPUT_DIR"
+    exit 1
+  }
+  path_is_within "$USER_DATA_DIR" "$COMFYUI_DIR" || {
+    log "USER_DATA_DIR must stay under COMFYUI_DIR: $USER_DATA_DIR"
+    exit 1
+  }
 }
 
 log_storage_layout() {
-  log "Network Volume checkpoints: $NETWORK_CHECKPOINT_DIR"
+  log "Storage mode: $STORAGE_MODE"
+  log "Model cache: $MODEL_CACHE_DIR"
   log "ComfyUI: $COMFYUI_DIR"
   log "ComfyUI checkpoint links: $CHECKPOINT_DIR"
   log "ComfyUI diffusion model links: $DIFFUSION_MODEL_DIR"
@@ -227,7 +286,10 @@ log_storage_layout() {
   log "ComfyUI VAEs: $VAE_DIR"
   log "Local output: $LOCAL_OUTPUT_DIR"
   log "Local temp: $LOCAL_TEMP_DIR"
+  log "Input data: $INPUT_DIR"
+  log "User data: $USER_DATA_DIR"
   log "Google Drive output: ${RCLONE_REMOTE_NAME}:${GDRIVE_OUTPUT_PATH}"
+  log "Google Drive state: ${RCLONE_REMOTE_NAME}:${GDRIVE_STATE_PATH}"
 }
 
 prepare_comfyui() {
@@ -454,6 +516,51 @@ configure_rclone() {
   mv -f "$temp_path" "$RCLONE_CONFIG"
   export RCLONE_CONFIG
   log "rclone config prepared at $RCLONE_CONFIG"
+}
+
+validate_remote_subpath() {
+  local label="$1"
+  local value="$2"
+  [[ -n "$value" && "$value" != "/" && "$value" != "." ]] || {
+    log "$label must name a non-root Google Drive folder"
+    exit 1
+  }
+  [[ "$value" != *":"* && "$value" != /* && "$value" != *".."* ]] || {
+    log "$label contains an unsafe remote path: $value"
+    exit 1
+  }
+}
+
+restore_gdrive_directory() {
+  local remote_path="$1"
+  local local_path="$2"
+  local label="$3"
+  mkdir -p "$local_path"
+  # mkdir is idempotent and lets an empty first-run backup coexist with strict
+  # failure handling for expired credentials or connectivity problems.
+  rclone mkdir "$remote_path"
+  log "restoring $label $remote_path -> $local_path"
+  rclone copy --create-empty-src-dirs "$remote_path" "$local_path"
+}
+
+restore_gdrive_state() {
+  if ! is_enabled "$ENABLE_STATE_SYNC"; then
+    log "state restore disabled"
+    return 0
+  fi
+
+  validate_remote_subpath GDRIVE_STATE_PATH "$GDRIVE_STATE_PATH"
+  restore_gdrive_directory \
+    "${RCLONE_REMOTE_NAME}:${GDRIVE_STATE_PATH}/user" \
+    "$USER_DATA_DIR" \
+    "user data"
+
+  if is_enabled "$SYNC_INPUTS"; then
+    restore_gdrive_directory \
+      "${RCLONE_REMOTE_NAME}:${GDRIVE_STATE_PATH}/input" \
+      "$INPUT_DIR" \
+      "inputs"
+  fi
 }
 
 unique_backup_path() {
@@ -720,7 +827,7 @@ sync_gdrive_checkpoints() {
   migrate_legacy_checkpoint_files
   prepare_checkpoint_link_dir
 
-  local remote_size relative_path count=0
+  local remote_size relative_path count=0 total_bytes=0
   while IFS=$'\t' read -r remote_size relative_path; do
     [[ -n "$remote_size" && -n "$relative_path" ]] || continue
     [[ "$remote_size" =~ ^[0-9]+$ ]] || {
@@ -732,9 +839,10 @@ sync_gdrive_checkpoints() {
     copy_checkpoint_to_cache "$relative_path" "$remote_size"
     link_checkpoint "$relative_path"
     count=$((count + 1))
+    total_bytes=$((total_bytes + remote_size))
   done < "$manifest"
   rm -f "$manifest"
-  log "configured $count GDrive checkpoints from $NETWORK_CHECKPOINT_DIR"
+  log "configured $count GDrive checkpoints ($total_bytes bytes) from $MODEL_CACHE_DIR"
 }
 
 copy_gdrive_local_models() {
@@ -903,6 +1011,7 @@ start_post_start_health_check() {
         log "required node available: UltralyticsDetectorProvider"
         log "mobile frontend route is available: /mobile/"
         log "SDXL and Anima canonical workflows are available"
+        log "ComfyUI startup ready in $(( $(date +%s) - BOOTSTRAP_STARTED_AT_EPOCH ))s from bootstrap start"
         exit 0
       fi
       sleep 2
@@ -933,8 +1042,8 @@ start_post_start_health_check() {
     else
       log "Anima canonical workflow is unavailable after startup"
     fi
-    log "post-start health check timed out after ${STARTUP_HEALTH_CHECK_TIMEOUT_SECONDS}s"
-  ) >> "$HEALTH_CHECK_LOG" 2>&1 &
+    log "post-start health check timed out after ${STARTUP_HEALTH_CHECK_TIMEOUT_SECONDS}s ($(( $(date +%s) - BOOTSTRAP_STARTED_AT_EPOCH ))s from bootstrap start)"
+  ) 2>&1 | tee -a "$HEALTH_CHECK_LOG" &
   log "post-start health check worker started with pid $!"
 }
 
@@ -1107,41 +1216,69 @@ start_output_sync() {
   log "output sync worker started with pid $!"
 }
 
+start_state_sync() {
+  if ! is_enabled "$ENABLE_STATE_SYNC"; then
+    log "state backup disabled"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$STATE_SYNC_LOG")"
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  nohup env \
+    RCLONE_CONFIG="$RCLONE_CONFIG" \
+    RCLONE_REMOTE_NAME="$RCLONE_REMOTE_NAME" \
+    GDRIVE_STATE_PATH="$GDRIVE_STATE_PATH" \
+    COMFYUI_DIR="$COMFYUI_DIR" \
+    INPUT_DIR="$INPUT_DIR" \
+    USER_DATA_DIR="$USER_DATA_DIR" \
+    ENABLE_STATE_SYNC="$ENABLE_STATE_SYNC" \
+    SYNC_INPUTS="$SYNC_INPUTS" \
+    STATE_SYNC_INTERVAL_SECONDS="$STATE_SYNC_INTERVAL_SECONDS" \
+    bash "$script_dir/sync_state.sh" >> "$STATE_SYNC_LOG" 2>&1 &
+  log "state backup worker started with pid $!"
+}
+
 bootstrap_main() {
-  validate_runpod_storage_layout
-  ensure_local_ephemeral_dirs
-  install_rclone_if_missing
-  configure_rclone
-  prepare_comfyui
-  configure_runtime_pip_constraints
-  ensure_comfyui_runtime_venv
-  resolve_comfyui_python
-  ensure_comfyui_manager
-  configure_comfyui_manager_args
+  run_timed_step "validate storage layout" validate_runpod_storage_layout
+  run_timed_step "prepare local output and temp" ensure_local_ephemeral_dirs
+  run_timed_step "install rclone" install_rclone_if_missing
+  run_timed_step "configure rclone" configure_rclone
+  run_timed_step "prepare ComfyUI" prepare_comfyui
+  run_timed_step "restore user data and inputs" restore_gdrive_state
+  run_timed_step "configure pip constraints" configure_runtime_pip_constraints
+  run_timed_step "prepare ComfyUI Python" ensure_comfyui_runtime_venv
+  run_timed_step "resolve ComfyUI Python" resolve_comfyui_python
+  run_timed_step "install ComfyUI Manager" ensure_comfyui_manager
+  run_timed_step "configure ComfyUI Manager" configure_comfyui_manager_args
   mkdir -p "$COMFYUI_DIR/custom_nodes" "$NETWORK_CHECKPOINT_DIR" \
     "$CHECKPOINT_DIR" "$DIFFUSION_MODEL_DIR" "$TEXT_ENCODER_DIR" "$VAE_DIR" \
     "$LORA_DIR" "$UPSCALE_MODEL_DIR" "$DETAILER_DIR"
-  install_mobile_frontend
-  register_canonical_workflow
-  register_anima_workflow
-  sync_gdrive_checkpoints
-  migrate_storage_directory "$COMFYUI_DIR/output" "$LOCAL_OUTPUT_DIR" output
-  migrate_storage_directory "$COMFYUI_DIR/temp" "$LOCAL_TEMP_DIR" temp
-  copy_gdrive_local_models
-  verify_anima_model_files
+  run_timed_step "install mobile frontend" install_mobile_frontend
+  run_timed_step "register SDXL workflow" register_canonical_workflow
+  run_timed_step "register Anima workflow" register_anima_workflow
+  run_timed_step "download checkpoints" sync_gdrive_checkpoints
+  run_timed_step "prepare output storage" \
+    migrate_storage_directory "$COMFYUI_DIR/output" "$LOCAL_OUTPUT_DIR" output
+  run_timed_step "prepare temp storage" \
+    migrate_storage_directory "$COMFYUI_DIR/temp" "$LOCAL_TEMP_DIR" temp
+  run_timed_step "download auxiliary models" copy_gdrive_local_models
+  run_timed_step "verify Anima models" verify_anima_model_files
   log_storage_layout
-  install_impact_pack
-  verify_mobile_frontend_install
-  verify_comfyui_manager_install
-  verify_required_custom_node_files
-  ensure_comfy_kitchen_for_anima
+  run_timed_step "install Impact Pack dependencies" install_impact_pack
+  run_timed_step "verify mobile frontend" verify_mobile_frontend_install
+  run_timed_step "verify ComfyUI Manager" verify_comfyui_manager_install
+  run_timed_step "verify custom nodes" verify_required_custom_node_files
+  run_timed_step "verify comfy-kitchen" ensure_comfy_kitchen_for_anima
 
   if [[ ! -x "$START_SCRIPT" ]]; then
     log "start script is not executable: $START_SCRIPT"
     exit 1
   fi
   start_output_sync
+  start_state_sync
   start_post_start_health_check
+  log "bootstrap setup finished in $(( $(date +%s) - BOOTSTRAP_STARTED_AT_EPOCH ))s; starting ComfyUI"
   exec "$START_SCRIPT"
 }
 
